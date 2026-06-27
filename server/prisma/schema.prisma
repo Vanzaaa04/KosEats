@@ -1,0 +1,375 @@
+// Prisma Schema for KosEats
+// Marketplace Masakan Rumahan Hiperlokal
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  BUYER
+  SELLER
+  ADMIN
+  COURIER
+}
+
+enum StoreStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MenuCategory {
+  NASI_LAUK
+  LAUK
+  SAYUR
+  CEMILAN
+  MINUMAN
+  PAKET
+}
+
+enum DeliveryMethod {
+  SELLER_DELIVERY
+  PICKUP
+  COURIER
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  COOKING
+  WAITING_COURIER
+  READY_FOR_PICKUP
+  DELIVERING
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+}
+
+enum DiscountSource {
+  ADMIN
+  SELLER
+}
+
+enum DiscountType {
+  FOOD
+  DELIVERY
+}
+
+enum AppealStatus {
+  WAITING_SELLER
+  ACCEPTED
+  REJECTED_SELLER
+  WAITING_ADMIN
+  ADMIN_APPROVED
+  ADMIN_REJECTED
+}
+
+enum NotificationType {
+  ORDER
+  APPEAL
+  SYSTEM
+  PROMO
+}
+
+enum PaymentMethod {
+  XENDIT
+  COD
+}
+
+// ==================== USERS ====================
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         Role     @default(BUYER)
+  phone        String?
+  address      String?
+  latitude     Float?
+  longitude    Float?
+  photoUrl     String?  @map("photo_url")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  store          Store?
+  orders         Order[]        @relation("BuyerOrders")
+  reviews        Review[]
+  appeals        Appeal[]
+  notifications  Notification[]
+  favorites      Favorite[]
+  discountsCreated Discount[]   @relation("DiscountCreator")
+  courierOrders  Order[]        @relation("CourierOrders")
+  messagesSent   Message[]      @relation("MessageSender")
+  messagesReceived Message[]    @relation("MessageReceiver")
+
+  @@map("users")
+}
+
+// ==================== STORE ====================
+
+model Store {
+  id              Int         @id @default(autoincrement())
+  userId          Int         @unique @map("user_id")
+  name            String
+  description     String?
+  address         String
+  photoUrl        String?     @map("photo_url")
+  latitude        Float
+  longitude       Float
+  openTime        String      @map("open_time") // "08:00"
+  closeTime       String      @map("close_time") // "20:00"
+  deliveryRadiusKm Float      @default(1.0) @map("delivery_radius_km")
+  isOpen          Boolean     @default(false) @map("is_open")
+  status          StoreStatus @default(PENDING)
+  xenditSubAccountId String?  @map("xendit_sub_account_id") // ID Sub-Akun Xendit untuk pencairan/split payment otomatis
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  user      User       @relation(fields: [userId], references: [id])
+  menus     Menu[]
+  orders    Order[]
+  reviews   Review[]
+  favorites Favorite[]
+
+  @@map("stores")
+}
+
+// ==================== MENU ====================
+
+model Menu {
+  id          Int          @id @default(autoincrement())
+  storeId     Int          @map("store_id")
+  name        String
+  description String?
+  photoUrl    String?      @map("photo_url")
+  price       Int          // dalam Rupiah
+  dailyStock  Int          @default(0) @map("daily_stock")
+  category    MenuCategory
+  isAvailable Boolean      @default(true) @map("is_available")
+  isDeleted   Boolean      @default(false) @map("is_deleted")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  store      Store       @relation(fields: [storeId], references: [id])
+  nutrition  Nutrition?
+  orderItems OrderItem[]
+  discounts  Discount[]
+
+  @@map("menus")
+}
+
+// ==================== NUTRITION (Opsional) ====================
+
+model Nutrition {
+  id          Int     @id @default(autoincrement())
+  menuId      Int     @unique @map("menu_id")
+  calories    Int?    // kkal
+  proteinG    Float?  @map("protein_g")
+  carbsG      Float?  @map("carbs_g")
+  fatG        Float?  @map("fat_g")
+  ingredients String? // bahan utama
+
+  // Relations
+  menu Menu @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@map("nutritions")
+}
+
+// ==================== DISCOUNT ====================
+
+model Discount {
+  id          Int            @id @default(autoincrement())
+  createdById Int            @map("created_by_id")
+  source      DiscountSource // ADMIN atau SELLER
+  type        DiscountType   // FOOD atau DELIVERY
+  menuId      Int?           @map("menu_id") // nullable, untuk diskon makanan spesifik
+  amount      Int            // potongan dalam Rupiah
+  quotaTotal  Int            @map("quota_total")
+  quotaUsed   Int            @default(0) @map("quota_used")
+  isActive    Boolean        @default(true) @map("is_active")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  // Relations
+  createdBy User    @relation("DiscountCreator", fields: [createdById], references: [id])
+  menu      Menu?   @relation(fields: [menuId], references: [id])
+  orders    Order[]
+
+  @@map("discounts")
+}
+
+// ==================== ORDER ====================
+
+model Order {
+  id              Int            @id @default(autoincrement())
+  buyerId         Int            @map("buyer_id")
+  storeId         Int            @map("store_id")
+  courierId       Int?           @map("courier_id")
+  discountId      Int?           @map("discount_id")
+  deliveryMethod  DeliveryMethod @map("delivery_method")
+  status          OrderStatus    @default(PENDING)
+  subtotal        Int
+  deliveryFee     Int            @default(0) @map("delivery_fee")
+  discountAmount  Int            @default(0) @map("discount_amount")
+  total           Int
+  platformFee     Int            @map("platform_fee") // komisi 12%
+  sellerIncome    Int            @map("seller_income") // 88%
+  midtransOrderId String?        @unique @map("midtrans_order_id") // Legacy
+  xenditInvoiceId String?        @unique @map("xendit_invoice_id") // ID Tagihan Xendit
+  xenditInvoiceUrl String?       @map("xendit_invoice_url") // URL Pembayaran Xendit
+  paymentMethod   PaymentMethod  @default(XENDIT) @map("payment_method")
+  paymentStatus   PaymentStatus  @default(PENDING) @map("payment_status")
+  notes           String?
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  // Relations
+  buyer            User              @relation("BuyerOrders", fields: [buyerId], references: [id])
+  store            Store             @relation(fields: [storeId], references: [id])
+  courier          User?             @relation("CourierOrders", fields: [courierId], references: [id])
+  discount         Discount?         @relation(fields: [discountId], references: [id])
+  items            OrderItem[]
+  review           Review?
+  appeal           Appeal?
+  locationTracking LocationTracking[]
+  messages         Message[]
+
+  @@map("orders")
+}
+
+// ==================== ORDER ITEM ====================
+
+model OrderItem {
+  id       Int @id @default(autoincrement())
+  orderId  Int @map("order_id")
+  menuId   Int @map("menu_id")
+  quantity Int
+  price    Int // harga saat itu
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menu  Menu  @relation(fields: [menuId], references: [id])
+
+  @@map("order_items")
+}
+
+// ==================== REVIEW ====================
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  orderId   Int      @unique @map("order_id")
+  buyerId   Int      @map("buyer_id")
+  storeId   Int      @map("store_id")
+  rating    Int      // 1-5
+  comment   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id])
+  buyer User  @relation(fields: [buyerId], references: [id])
+  store Store @relation(fields: [storeId], references: [id])
+
+  @@map("reviews")
+}
+
+// ==================== APPEAL (Banding) ====================
+
+model Appeal {
+  id          Int          @id @default(autoincrement())
+  orderId     Int          @unique @map("order_id")
+  buyerId     Int          @map("buyer_id")
+  reason      String
+  photoUrl    String?      @map("photo_url")
+  description String?
+  status      AppealStatus @default(WAITING_SELLER)
+  adminNote   String?      @map("admin_note")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id])
+  buyer User  @relation(fields: [buyerId], references: [id])
+
+  @@map("appeals")
+}
+
+// ==================== NOTIFICATION ====================
+
+model Notification {
+  id        Int              @id @default(autoincrement())
+  userId    Int              @map("user_id")
+  title     String
+  message   String
+  type      NotificationType @default(SYSTEM)
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+// ==================== LOCATION TRACKING ====================
+
+model LocationTracking {
+  id        Int      @id @default(autoincrement())
+  orderId   Int      @map("order_id")
+  latitude  Float
+  longitude Float
+  timestamp DateTime @default(now())
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("location_tracking")
+}
+
+// ==================== FAVORITE ====================
+
+model Favorite {
+  id       Int @id @default(autoincrement())
+  buyerId  Int @map("buyer_id")
+  storeId  Int @map("store_id")
+
+  // Relations
+  buyer User  @relation(fields: [buyerId], references: [id])
+  store Store @relation(fields: [storeId], references: [id])
+
+  @@unique([buyerId, storeId])
+  @@map("favorites")
+}
+
+// ==================== CHAT ====================
+
+model Message {
+  id         Int      @id @default(autoincrement())
+  orderId    Int      @map("order_id")
+  senderId   Int      @map("sender_id")
+  receiverId Int      @map("receiver_id")
+  content    String?  @db.Text
+  photoUrl   String?  @map("photo_url")
+  isRead     Boolean  @default(false) @map("is_read")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  order      Order    @relation(fields: [orderId], references: [id])
+  sender     User     @relation("MessageSender", fields: [senderId], references: [id])
+  receiver   User     @relation("MessageReceiver", fields: [receiverId], references: [id])
+
+  @@map("messages")
+}
