@@ -12,7 +12,7 @@ import { Flame, Beef, Wheat, Droplet, Info, Search, Leaf } from "lucide-react";
  * Fitur: Filter kategori, Search, Badge Gizi, Diskon, Skeleton Loading
  */
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
 
 const CATEGORIES = [
   { value: "", label: "Semua", img: "/images/nasi-goreng.jpg" },

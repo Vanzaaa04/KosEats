@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Store, CheckCircle, ShieldAlert } from "lucide-react";
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
 
 export default function AdminStoresPage() {
   const [stores, setStores] = useState([]);
@@ -56,9 +57,15 @@ export default function AdminStoresPage() {
 
   return (
     <div>
-      <div className="explore-header">
-        <h1>Approval Toko 🏪</h1>
-        <p className="text-muted">Tinjau dan setujui pendaftaran warung baru.</p>
+      <div className="explore-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <h1 style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}><Store size={32} className="text-primary" /> Approval Toko</h1>
+          <p className="text-muted">Tinjau dan setujui pendaftaran warung baru.</p>
+        </div>
+        <div style={{ background: "var(--color-bg)", padding: "1rem 2rem", borderRadius: "12px", border: "1px solid var(--color-border)", textAlign: "center" }}>
+          <span style={{ fontSize: "0.875rem", color: "var(--color-muted)" }}>Total Toko (Menunggu/Disetujui)</span>
+          <h2 style={{ margin: "0.25rem 0 0 0", color: "var(--color-primary)" }}>{stores.length}</h2>
+        </div>
       </div>
 
       <div className="grid gap-6">
@@ -66,8 +73,8 @@ export default function AdminStoresPage() {
           <p>Memuat data toko...</p>
         ) : stores.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state-icon">✅</div>
-            <p className="empty-state-text">Tidak ada toko yang terdaftar.</p>
+            <div className="empty-state-icon" style={{ color: "var(--color-success)" }}><CheckCircle size={48} /></div>
+            <p className="empty-state-text">Tidak ada toko yang terdaftar atau menunggu persetujuan.</p>
           </div>
         ) : (
           <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -83,16 +90,24 @@ export default function AdminStoresPage() {
               </thead>
               <tbody>
                 {stores.map(store => (
-                  <tr key={store.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                  <tr key={store.id} className="hover-bg-subtle" style={{ borderBottom: "1px solid var(--color-border)" }}>
                     <td style={{ padding: "1rem", fontWeight: "bold" }}>{store.name}</td>
                     <td style={{ padding: "1rem" }}>{store.user?.name || "N/A"}</td>
-                    <td style={{ padding: "1rem", fontSize: "0.875rem" }}>{store.latitude}, {store.longitude}</td>
+                    <td style={{ padding: "1rem", fontSize: "0.875rem", maxWidth: "250px" }}>
+                      <strong>{store.address}</strong><br/>
+                      <span className="text-muted text-xs">GPS: {store.latitude}, {store.longitude}</span>
+                    </td>
                     <td style={{ padding: "1rem" }}>
                       <span className={`badge ${store.status === 'APPROVED' ? 'badge-success' : store.status === 'REJECTED' ? 'badge-error' : 'badge-warning'}`}>
                         {store.status}
                       </span>
                     </td>
-                    <td style={{ padding: "1rem", display: "flex", gap: "0.5rem" }}>
+                    <td style={{ padding: "1rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                      {store.ktpUrl && (
+                        <a href={`${process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000"}${store.ktpUrl}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">
+                          Lihat KTP
+                        </a>
+                      )}
                       {store.status === "PENDING" && (
                         <>
                           <button className="btn btn-success btn-sm" onClick={() => updateStoreStatus(store.id, "APPROVED")}>Setujui</button>

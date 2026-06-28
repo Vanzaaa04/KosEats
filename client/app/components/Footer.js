@@ -1,10 +1,27 @@
+"use client";
+
 import Link from "next/link";
+import { useState, useEffect } from "react";
 import { Mail, Phone, MapPin, Heart } from "lucide-react";
 
 /**
  * Footer KosEats — tampil di halaman publik (landing, explore)
  */
 export default function Footer() {
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const loadUser = () => {
+      const storedUser = localStorage.getItem("user");
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+      }
+    };
+    loadUser();
+    window.addEventListener("userUpdated", loadUser);
+    return () => window.removeEventListener("userUpdated", loadUser);
+  }, []);
+
   return (
     <footer className="footer">
       <div className="container">
@@ -31,19 +48,38 @@ export default function Footer() {
             <ul className="footer-links">
               <li><Link href="/">Beranda</Link></li>
               <li><Link href="/explore">Jelajahi Menu</Link></li>
-              <li><Link href="/login">Masuk</Link></li>
-              <li><Link href="/register">Daftar</Link></li>
+              {!user ? (
+                <>
+                  <li><Link href="/login">Masuk</Link></li>
+                  <li><Link href="/register">Daftar</Link></li>
+                </>
+              ) : (
+                <>
+                  <li><Link href="/profile">Profil Saya</Link></li>
+                  {user.role === 'SELLER' && <li><Link href="/seller">Dashboard Toko</Link></li>}
+                  {user.role === 'COURIER' && <li><Link href="/courier">Tugas Kurir</Link></li>}
+                </>
+              )}
             </ul>
           </div>
 
           {/* Mitra */}
-          <div className="footer-section">
-            <h5 className="footer-title">Mitra KosEats</h5>
-            <ul className="footer-links">
-              <li><Link href="/register?role=seller">Daftar Jadi Penjual</Link></li>
-              <li><Link href="/seller">Dashboard Penjual</Link></li>
-            </ul>
-          </div>
+          {(!user || user.role === 'BUYER' || user.role === 'ADMIN') && (
+            <div className="footer-links">
+              <h4 className="footer-title">Kemitraan</h4>
+              <ul>
+                {(!user || user.role === 'BUYER') && (
+                  <>
+                    <li><Link href="/upgrade/seller" className="footer-link">Daftar Jadi Penjual</Link></li>
+                    <li><Link href="/upgrade/courier" className="footer-link">Daftar Jadi Driver</Link></li>
+                  </>
+                )}
+                {user?.role === 'ADMIN' && (
+                  <li><Link href="/admin" className="footer-link">Portal Admin</Link></li>
+                )}
+              </ul>
+            </div>
+          )}
 
           {/* Kontak */}
           <div className="footer-section">

@@ -6,12 +6,12 @@ import Link from "next/link";
 import Navbar from "../../components/Navbar";
 import dynamic from "next/dynamic";
 import io from "socket.io-client";
-import { Send, Image as ImageIcon, MapPin, ArrowLeft } from "lucide-react";
+import { Send, Image as ImageIcon, MapPin, ArrowLeft, PackageSearch, CheckCircle, AlertTriangle } from "lucide-react";
 
 const TrackingMap = dynamic(() => import("../../components/Map"), { ssr: false });
 
-const API_URL = "http://localhost:5000/api";
-const SOCKET_URL = "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
 
 export default function OrderDetailPage({ params }) {
   // Use React.use() to unwrap params in Next.js 15
@@ -27,7 +27,7 @@ export default function OrderDetailPage({ params }) {
   const [user, setUser] = useState(null);
   
   // Tracking
-  const [courierLocation, setCourierLocation] = useState({ lat: -7.280, lng: 112.795 });
+  const [courierLocation, setCourierLocation] = useState(null);
   const socketRef = useRef(null);
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -66,6 +66,27 @@ export default function OrderDetailPage({ params }) {
     };
   }, [user, orderId]);
 
+  useEffect(() => {
+    let watchId;
+    if (order && socketRef.current && order.deliveryMethod === 'PICKUP' && ['COOKING', 'READY_FOR_PICKUP'].includes(order.status)) {
+      if (navigator.geolocation) {
+        watchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            setCourierLocation({ lat, lng });
+            socketRef.current.emit("send_location", { orderId: order.id, lat, lng });
+          },
+          (err) => console.error("GPS error:", err),
+          { enableHighAccuracy: true }
+        );
+      }
+    }
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+    };
+  }, [order]);
+
   const fetchOrderDetails = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -75,7 +96,12 @@ export default function OrderDetailPage({ params }) {
       const data = await res.json();
       if (data.success) {
         const found = data.data.find(o => o.id === orderId);
-        if (found) setOrder(found);
+        if (found) {
+          setOrder(found);
+          if (!courierLocation) {
+            setCourierLocation({ lat: found.store.latitude || -7.280, lng: found.store.longitude || 112.795 });
+          }
+        }
       }
     } catch (err) {
       console.error(err);
@@ -169,7 +195,7 @@ export default function OrderDetailPage({ params }) {
       
       if (data.success) {
         // fileUrl is e.g. /public/uploads/file-123.jpg
-        const fullUrl = `${API_URL.replace("/api", "")}${data.url}`;
+        const fullUrl = `${API_URL.replace("/api", "")}${data.data.url}`;
         sendMessage(null, fullUrl);
       } else {
         alert("Gagal upload foto");
@@ -230,20 +256,81 @@ export default function OrderDetailPage({ params }) {
                   Status: <strong>{order.status}</strong>
                 </p>
               </div>
-              <div style={{ flex: 1, minHeight: "400px" }}>
-                <TrackingMap lat={courierLocation.lat} lng={courierLocation.lng} />
+
+              {order.status === 'WAITING_COURIER' && (
+                <div style={{ padding: "2rem", textAlign: "center", background: "#f8f9fa", borderBottom: "1px solid var(--color-border)" }}>
+                  <div className="pulse" style={{ display: "inline-flex", padding: "1.5rem", background: "var(--color-primary-light)", borderRadius: "50%", marginBottom: "1rem" }}>
+                    <PackageSearch size={48} color="var(--color-primary)" />
+                  </div>
+                  <h3 style={{ color: "var(--color-primary)", marginBottom: "0.5rem" }}>Mencari Kurir...</h3>
+                  <p className="text-muted">Sistem sedang memancarkan sinyal ke kurir di sekitarmu.</p>
+                </div>
+              )}
+
+              {order.deliveryMethod === 'SELLER_DELIVERY' && order.status !== 'DELIVERED' && (
+                <div style={{ padding: "1.5rem", background: "var(--color-success-light)", borderBottom: "2px solid var(--color-success)", textAlign: "center" }}>
+                  <h4 style={{ color: "var(--color-success)", marginBottom: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+                    <CheckCircle size={24} /> Hore! Diantar Penjual 🎉
+                  </h4>
+                  <p style={{ color: "var(--color-success)", fontSize: "0.95rem", margin: 0 }}>
+                    Penjual berbaik hati mengambil alih pengantaran makananmu. <strong>Sisa ongkos kirim telah dikembalikan ke Saldo Dompet KosEats kamu!</strong>
+                  </p>
+                </div>
+              )}
+
+              {order.deliveryMethod === 'PICKUP' && order.status !== 'DELIVERED' && (
+                <div style={{ padding: "1.5rem", background: "var(--color-warning-light)", borderBottom: "2px solid var(--color-warning)", textAlign: "center" }}>
+                  <h4 style={{ color: "#b26f00", marginBottom: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+                    <AlertTriangle size={24} /> Mohon Ambil Sendiri (Pick-Up) 🛍️
+                  </h4>
+                  <p style={{ color: "#8a5600", fontSize: "0.95rem", margin: 0 }}>
+                    Maaf, kurir sedang penuh dan penjual sibuk. <strong>Seluruh ongkos kirim telah dikembalikan ke Saldo Dompet KosEats kamu!</strong> Silakan ambil makananmu di resto.
+                  </p>
+                </div>
+              )}
+
+              {/* COURIER INFO CARD */}
+              {order.status === "DELIVERING" && order.courier && order.courier.courierProfile && (
+                <div style={{ padding: "1rem", background: "#f8f9fa", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", gap: "1rem" }}>
+                  <img src={order.courier.photoUrl || "https://api.dicebear.com/7.x/avataaars/svg?seed=driver"} alt="Courier" style={{ width: "60px", height: "60px", borderRadius: "50%", objectFit: "cover", border: "2px solid var(--color-primary)" }} />
+                  <div>
+                    <h4 style={{ margin: "0 0 0.25rem 0" }}>{order.courier.name}</h4>
+                    <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--color-muted)", fontWeight: "bold" }}>
+                      🏍️ {order.courier.courierProfile.vehicleBrand} {order.courier.courierProfile.vehicleColor} — {order.courier.courierProfile.vehiclePlate}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ flex: 1, minHeight: "400px", display: "flex", flexDirection: "column" }}>
+                {order.status === "DELIVERED" && order.proofOfDeliveryUrl ? (
+                  <div style={{ padding: "1.5rem", flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#f8f9fa" }}>
+                    <h4 style={{ marginBottom: "1rem", color: "var(--color-success)" }}>✅ Pesanan Selesai (Telah Diantar)</h4>
+                    <p style={{ marginBottom: "1rem", color: "var(--color-muted)" }}>Bukti Pengantaran:</p>
+                    <img 
+                      src={order.proofOfDeliveryUrl} 
+                      alt="Proof of Delivery" 
+                      style={{ maxWidth: "100%", maxHeight: "300px", borderRadius: "8px", border: "2px solid var(--color-success)", objectFit: "cover" }} 
+                      onClick={() => window.open(order.proofOfDeliveryUrl, '_blank')}
+                    />
+                  </div>
+                ) : courierLocation ? (
+                  <TrackingMap lat={courierLocation.lat} lng={courierLocation.lng} />
+                ) : (
+                  <div className="flex-center" style={{ height: "100%", background: "#f8f9fa", color: "var(--color-muted)" }}>Memuat Peta...</div>
+                )}
               </div>
             </div>
 
             {/* RIGHT: Live Chat */}
             <div className="card" style={{ padding: "0", display: "flex", flexDirection: "column", height: "600px" }}>
-              <div style={{ padding: "1.5rem", borderBottom: "1px solid var(--color-border)", background: "var(--color-primary)", color: "white" }}>
-                <h3 style={{ margin: 0, color: "white" }}>Chat Penjual / Kurir</h3>
-                <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", opacity: 0.9 }}>{order.store.name}</p>
+              <div style={{ padding: "1.5rem", borderBottom: "1px solid var(--color-border)", background: "white" }}>
+                <h3 style={{ margin: 0, color: "var(--color-primary)" }}>Chat Penjual / Kurir</h3>
+                <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: "var(--color-muted)" }}>{order.store.name}</p>
               </div>
               
               {/* Messages Area */}
-              <div style={{ flex: 1, overflowY: "auto", padding: "1.5rem", background: "#efeae2", display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ flex: 1, overflowY: "auto", padding: "1.5rem", background: "#f8f9fa", display: "flex", flexDirection: "column", gap: "1rem" }}>
                 {messages.length === 0 ? (
                   <div className="text-center text-muted" style={{ padding: "2rem" }}>
                     Kirim pesan pertama Anda.
@@ -254,22 +341,24 @@ export default function OrderDetailPage({ params }) {
                     return (
                       <div key={msg.id || idx} style={{ alignSelf: isMe ? "flex-end" : "flex-start", maxWidth: "75%" }}>
                         <div style={{ 
-                          background: isMe ? "#dcf8c6" : "white", 
-                          padding: "0.75rem 1rem", 
-                          borderRadius: "1rem",
-                          borderTopRightRadius: isMe ? "0" : "1rem",
-                          borderTopLeftRadius: !isMe ? "0" : "1rem",
-                          boxShadow: "0 1px 2px rgba(0,0,0,0.1)"
+                          background: isMe ? "var(--color-primary)" : "white", 
+                          color: isMe ? "white" : "inherit",
+                          padding: "0.875rem 1rem", 
+                          borderRadius: "16px",
+                          borderBottomRightRadius: isMe ? "4px" : "16px",
+                          borderBottomLeftRadius: !isMe ? "4px" : "16px",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                          border: isMe ? "none" : "1px solid var(--color-border)"
                         }}>
-                          {!isMe && <div style={{ fontSize: "0.75rem", fontWeight: "bold", color: "var(--color-primary)", marginBottom: "0.25rem" }}>{msg.sender?.name || "Penjual"}</div>}
+                          {!isMe && <div style={{ fontSize: "0.75rem", fontWeight: "bold", color: "var(--color-primary-dark)", marginBottom: "0.35rem" }}>{msg.sender?.name || "Penjual"}</div>}
                           
                           {msg.photoUrl && (
-                            <img src={msg.photoUrl} alt="Attachment" style={{ width: "100%", borderRadius: "0.5rem", marginBottom: "0.5rem", cursor: "pointer" }} onClick={() => window.open(msg.photoUrl, "_blank")} />
+                            <img src={msg.photoUrl} alt="Attachment" style={{ width: "100%", borderRadius: "0.5rem", marginBottom: "0.5rem", cursor: "pointer", objectFit: "cover", maxHeight: "200px" }} onClick={() => window.open(msg.photoUrl, "_blank")} />
                           )}
                           
-                          {msg.content && <div style={{ wordBreak: "break-word" }}>{msg.content}</div>}
+                          {msg.content && <div style={{ wordBreak: "break-word", lineHeight: "1.5" }}>{msg.content}</div>}
                           
-                          <div style={{ fontSize: "0.65rem", color: "gray", textAlign: "right", marginTop: "0.25rem" }}>
+                          <div style={{ fontSize: "0.65rem", color: isMe ? "rgba(255,255,255,0.8)" : "var(--color-muted)", textAlign: "right", marginTop: "0.4rem" }}>
                             {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </div>
                         </div>

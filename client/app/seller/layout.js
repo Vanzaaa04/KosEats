@@ -50,10 +50,6 @@ export default function SellerLayout({ children }) {
           <Scale size={20} className="sidebar-icon" /> Banding/Refund
         </Link>
         <hr style={{ margin: "1rem 0", borderTop: "1px solid var(--color-border)" }} />
-        <Link href="/profile" className="sidebar-link text-primary" style={{ fontWeight: "bold" }}>
-          <ArrowLeftRight size={20} className="sidebar-icon" /> Mode Pembeli
-        </Link>
-
         {/* Toggle Buka Tutup Warung */}
         <div style={{ marginTop: "2rem", padding: "0 var(--space-6)" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -66,7 +62,7 @@ export default function SellerLayout({ children }) {
                 setStoreOpen(newState);
                 try {
                   const token = localStorage.getItem("token");
-                  await fetch("http://localhost:5000/api/stores/my", {
+                  await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}/stores/my`, {
                     method: "PUT",
                     headers: { 
                       "Content-Type": "application/json",

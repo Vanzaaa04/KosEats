@@ -13,8 +13,8 @@ const TrackingMap = dynamic(() => import('../components/Map'), { ssr: false });
  * Menampilkan daftar pesanan dengan status tracking 4 tahap.
  */
 
-const API_URL = "http://localhost:5000/api";
-const SOCKET_URL = "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
 
 function formatPrice(price) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(price);
@@ -33,10 +33,10 @@ export default function BuyerOrdersPage() {
   const [loading, setLoading] = useState(true);
 
   // Modal States
-  const [reviewModal, setReviewModal] = useState({ show: false, orderId: null, rating: 5, comment: "" });
+  const [reviewModal, setReviewModal] = useState({ show: false, orderId: null, rating: 5, courierRating: 5, comment: "", hasCourier: false });
   const [appealModal, setAppealModal] = useState({ show: false, orderId: null, reason: "Makanan basi / rusak", description: "", photoUrl: "" });
   const [trackingModal, setTrackingModal] = useState({ show: false, orderId: null, lat: -7.280, lng: 112.795 });
-  const [cancelModal, setCancelModal] = useState({ show: false, orderId: null, reason: "" });
+  const [cancelModal, setCancelModal] = useState({ show: false, orderId: null, reason: "", customReason: "" });
   
   const socketRef = useRef(null);
 
@@ -102,7 +102,9 @@ export default function BuyerOrdersPage() {
   };
 
   const getStatusIndex = (status) => {
-    return STATUS_STEPS.findIndex(s => s.value === status) || 0;
+    if (['WAITING_COURIER', 'READY_FOR_PICKUP', 'DELIVERING'].includes(status)) return 3;
+    const idx = STATUS_STEPS.findIndex(s => s.value === status);
+    return idx >= 0 ? idx : 0;
   };
 
   const submitReview = async (e) => {
@@ -112,11 +114,16 @@ export default function BuyerOrdersPage() {
       const res = await fetch(`${API_URL}/reviews`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ orderId: reviewModal.orderId, rating: reviewModal.rating, comment: reviewModal.comment })
+        body: JSON.stringify({ 
+          orderId: reviewModal.orderId, 
+          rating: reviewModal.rating, 
+          courierRating: reviewModal.hasCourier ? reviewModal.courierRating : null,
+          comment: reviewModal.comment 
+        })
       });
       const data = await res.json();
       if (data.success) {
-        setReviewModal({ show: false, orderId: null, rating: 5, comment: "" });
+        setReviewModal({ show: false, orderId: null, rating: 5, courierRating: 5, comment: "", hasCourier: false });
         fetchOrders();
         alert("Ulasan berhasil dikirim!");
       } else {
@@ -156,11 +163,11 @@ export default function BuyerOrdersPage() {
       const res = await fetch(`${API_URL}/orders/${cancelModal.orderId}/cancel`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ reason: cancelModal.reason })
+        body: JSON.stringify({ reason: cancelModal.reason === "Alasan lainnya" ? cancelModal.customReason : cancelModal.reason })
       });
       const data = await res.json();
       if (data.success) {
-        setCancelModal({ show: false, orderId: null, reason: "" });
+        setCancelModal({ show: false, orderId: null, reason: "", customReason: "" });
         fetchOrders();
         alert("Pesanan berhasil dibatalkan.");
       } else {
@@ -265,7 +272,7 @@ export default function BuyerOrdersPage() {
                         <button className="btn btn-outline btn-sm" onClick={() => startBuyerGPS(order.id)}>🏃 Mulai Jalan (Pancarkan Lokasi)</button>
                       )}
                       {order.status === 'DELIVERED' && !order.review && !order.appeal && (
-                        <button className="btn btn-primary btn-sm" onClick={() => setReviewModal({ show: true, orderId: order.id, rating: 5, comment: "" })}>⭐ Beri Ulasan</button>
+                        <button className="btn btn-primary btn-sm" onClick={() => setReviewModal({ show: true, orderId: order.id, rating: 5, courierRating: 5, comment: "", hasCourier: !!order.courierId })}>⭐ Beri Ulasan</button>
                       )}
                       {order.status === 'DELIVERED' && !order.appeal && (
                         <button className="btn btn-danger btn-sm" onClick={() => setAppealModal({ show: true, orderId: order.id, reason: "Makanan basi / rusak", description: "", photoUrl: "" })}>⚠️ Ajukan Banding (Refund)</button>
@@ -274,7 +281,7 @@ export default function BuyerOrdersPage() {
                         <span className="text-sm text-error">Banding Status: <strong>{order.appeal.status}</strong></span>
                       )}
                       {order.status === 'PENDING' && (
-                        <button className="btn btn-outline btn-sm" onClick={() => setCancelModal({ show: true, orderId: order.id, reason: "" })}>Batalkan Pesanan</button>
+                        <button className="btn btn-outline btn-sm" onClick={() => setCancelModal({ show: true, orderId: order.id, reason: "", customReason: "" })}>Batalkan Pesanan</button>
                       )}
                     </div>
                   </div>
@@ -308,7 +315,7 @@ export default function BuyerOrdersPage() {
               <h3 style={{ marginBottom: "1.5rem" }}>⭐ Beri Ulasan</h3>
               <form onSubmit={submitReview}>
                 <div className="form-group">
-                  <label className="form-label">Rating</label>
+                  <label className="form-label">Rating Toko & Makanan</label>
                   <select className="form-input" value={reviewModal.rating} onChange={e => setReviewModal({...reviewModal, rating: parseInt(e.target.value)})}>
                     <option value="5">⭐⭐⭐⭐⭐ (Sangat Puas)</option>
                     <option value="4">⭐⭐⭐⭐ (Puas)</option>
@@ -317,6 +324,18 @@ export default function BuyerOrdersPage() {
                     <option value="1">⭐ (Sangat Kecewa)</option>
                   </select>
                 </div>
+                {reviewModal.hasCourier && (
+                  <div className="form-group">
+                    <label className="form-label">Rating Kurir (Pengantaran)</label>
+                    <select className="form-input" value={reviewModal.courierRating} onChange={e => setReviewModal({...reviewModal, courierRating: parseInt(e.target.value)})}>
+                      <option value="5">⭐⭐⭐⭐⭐ (Sangat Cepat & Ramah)</option>
+                      <option value="4">⭐⭐⭐⭐ (Cepat)</option>
+                      <option value="3">⭐⭐⭐ (Biasa Saja)</option>
+                      <option value="2">⭐⭐ (Lambat / Kurang Ramah)</option>
+                      <option value="1">⭐ (Sangat Kecewa)</option>
+                    </select>
+                  </div>
+                )}
                 <div className="form-group">
                   <label className="form-label">Komentar</label>
                   <textarea className="form-input" rows="3" placeholder="Masakan ibu enak banget!" value={reviewModal.comment} onChange={e => setReviewModal({...reviewModal, comment: e.target.value})}></textarea>
@@ -369,17 +388,22 @@ export default function BuyerOrdersPage() {
               </p>
               <form onSubmit={submitCancel}>
                 <div className="form-group">
-                  <label className="form-label">Alasan Pembatalan (Opsional)</label>
-                  <select className="form-input" value={cancelModal.reason} onChange={e => setCancelModal({...cancelModal, reason: e.target.value})}>
+                  <label className="form-label">Alasan Pembatalan (Wajib)</label>
+                  <select className="form-input" required value={cancelModal.reason} onChange={e => setCancelModal({...cancelModal, reason: e.target.value})}>
                     <option value="">Pilih Alasan...</option>
                     <option value="Ingin mengubah pesanan">Ingin mengubah pesanan</option>
                     <option value="Berubah pikiran">Berubah pikiran / Tidak jadi beli</option>
                     <option value="Penjual terlalu lama merespon">Penjual terlalu lama merespon</option>
                     <option value="Alasan lainnya">Lainnya</option>
                   </select>
+                  {cancelModal.reason === "Alasan lainnya" && (
+                    <div style={{ marginTop: "1rem" }}>
+                      <textarea className="form-input" rows="2" required placeholder="Tulis alasan pembatalan Anda..." value={cancelModal.customReason} onChange={e => setCancelModal({...cancelModal, customReason: e.target.value})}></textarea>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: "1rem", marginTop: "2rem" }}>
-                  <button type="button" className="btn btn-outline" style={{ flex: 1 }} onClick={() => setCancelModal({ show: false, orderId: null, reason: "" })}>Kembali</button>
+                  <button type="button" className="btn btn-outline" style={{ flex: 1 }} onClick={() => setCancelModal({ show: false, orderId: null, reason: "", customReason: "" })}>Kembali</button>
                   <button type="submit" className="btn btn-danger" style={{ flex: 1 }}>Ya, Batalkan</button>
                 </div>
               </form>

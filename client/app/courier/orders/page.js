@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import Navbar from "../../components/Navbar";
 
-const API_URL = "http://localhost:5000/api";
-const SOCKET_URL = "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
 
 function formatPrice(price) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(price);
@@ -16,8 +16,11 @@ export default function CourierOrdersPage() {
   const [myOrders, setMyOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("AVAILABLE"); // AVAILABLE, MY_JOBS
+  const [uploadingPoD, setUploadingPoD] = useState(false);
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
   
   const socketRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     fetchData();
@@ -72,16 +75,21 @@ export default function CourierOrdersPage() {
     }
   };
 
-  const updateStatus = async (id, newStatus) => {
+  const updateStatus = async (id, newStatus, proofOfDeliveryUrl = null) => {
     try {
       const token = localStorage.getItem("token");
+      const payload = { status: newStatus };
+      if (proofOfDeliveryUrl) {
+        payload.proofOfDeliveryUrl = proofOfDeliveryUrl;
+      }
+
       const res = await fetch(`${API_URL}/courier/orders/${id}/status`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify({ status: newStatus })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (data.success) {
@@ -93,9 +101,46 @@ export default function CourierOrdersPage() {
         if (newStatus === "DELIVERED") {
           alert("Orderan Selesai! Terima Kasih.");
         }
+      } else {
+        alert(data.message);
       }
     } catch (err) {
       alert("Terjadi kesalahan");
+    }
+  };
+
+  const triggerUpload = (id) => {
+    setSelectedOrderId(id);
+    fileInputRef.current.click();
+  };
+
+  const handlePoDUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !selectedOrderId) return;
+    setUploadingPoD(true);
+    const formData = new FormData();
+    formData.append("image", file);
+
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_URL}/upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.success) {
+        const fullUrl = `${API_URL.replace("/api", "")}${data.data.url}`;
+        await updateStatus(selectedOrderId, "DELIVERED", fullUrl);
+      } else {
+        alert("Gagal upload foto");
+      }
+    } catch (err) {
+      alert("Error upload foto");
+    } finally {
+      setUploadingPoD(false);
+      setSelectedOrderId(null);
+      e.target.value = null;
     }
   };
 
@@ -209,8 +254,13 @@ export default function CourierOrdersPage() {
                   </button>
                 )}
                 {order.status === 'DELIVERING' && (
-                  <button className="btn btn-success" style={{ width: "100%" }} onClick={() => updateStatus(order.id, "DELIVERED")}>
-                    Selesaikan Pesanan
+                  <button 
+                    className="btn btn-success" 
+                    style={{ width: "100%", opacity: uploadingPoD && selectedOrderId === order.id ? 0.7 : 1 }} 
+                    onClick={() => triggerUpload(order.id)}
+                    disabled={uploadingPoD}
+                  >
+                    {uploadingPoD && selectedOrderId === order.id ? "Mengunggah Bukti..." : "Ambil Foto & Selesaikan Pesanan"}
                   </button>
                 )}
               </div>
@@ -218,6 +268,14 @@ export default function CourierOrdersPage() {
           </div>
         )}
       </main>
+      
+      <input 
+        type="file" 
+        accept="image/*" 
+        ref={fileInputRef} 
+        onChange={handlePoDUpload} 
+        style={{ display: "none" }} 
+      />
     </>
   );
 }

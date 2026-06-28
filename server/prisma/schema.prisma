@@ -87,6 +87,12 @@ enum PaymentMethod {
   COD
 }
 
+enum WalletTxType {
+  TOP_UP
+  COMMISSION_DEDUCTION
+  COMMISSION_RECEIVED
+}
+
 // ==================== USERS ====================
 
 model User {
@@ -100,12 +106,14 @@ model User {
   latitude     Float?
   longitude    Float?
   photoUrl     String?  @map("photo_url")
+  walletBalance Float   @default(0) @map("wallet_balance")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   // Relations
   store          Store?
+  courierProfile CourierProfile?
   orders         Order[]        @relation("BuyerOrders")
   reviews        Review[]
   appeals        Appeal[]
@@ -115,8 +123,26 @@ model User {
   courierOrders  Order[]        @relation("CourierOrders")
   messagesSent   Message[]      @relation("MessageSender")
   messagesReceived Message[]    @relation("MessageReceiver")
+  walletTransactions WalletTransaction[]
 
   @@map("users")
+}
+
+// ==================== WALLET ====================
+
+model WalletTransaction {
+  id          Int          @id @default(autoincrement())
+  userId      Int          @map("user_id")
+  amount      Float
+  type        WalletTxType
+  description String?
+  status      String       @default("PENDING") // PENDING, PAID, FAILED
+  externalId  String?      @unique @map("external_id") // ID invoice xendit misal KE-TOPUP-123
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  user        User         @relation(fields: [userId], references: [id])
+
+  @@map("wallet_transactions")
 }
 
 // ==================== STORE ====================
@@ -128,6 +154,7 @@ model Store {
   description     String?
   address         String
   photoUrl        String?     @map("photo_url")
+  ktpUrl          String?     @map("ktp_url")
   latitude        Float
   longitude       Float
   openTime        String      @map("open_time") // "08:00"
@@ -136,6 +163,8 @@ model Store {
   isOpen          Boolean     @default(false) @map("is_open")
   status          StoreStatus @default(PENDING)
   xenditSubAccountId String?  @map("xendit_sub_account_id") // ID Sub-Akun Xendit untuk pencairan/split payment otomatis
+  avgRating       Float       @default(0) @map("avg_rating")
+  totalReviews    Int         @default(0) @map("total_reviews")
   createdAt       DateTime    @default(now()) @map("created_at")
   updatedAt       DateTime    @updatedAt @map("updated_at")
 
@@ -147,6 +176,27 @@ model Store {
   favorites Favorite[]
 
   @@map("stores")
+}
+
+// ==================== COURIER PROFILE ====================
+
+model CourierProfile {
+  id           Int         @id @default(autoincrement())
+  userId       Int         @unique @map("user_id")
+  vehicleType  String      @map("vehicle_type") // e.g. Motor
+  vehicleBrand String      @map("vehicle_brand") // e.g. Honda Beat
+  vehicleColor String      @map("vehicle_color") // e.g. Merah
+  vehiclePlate String      @map("vehicle_plate") // e.g. B 1234 ABC
+  ktpUrl       String?     @map("ktp_url")
+  status       StoreStatus @default(PENDING) // Reuse StoreStatus for simplicity (PENDING, APPROVED, REJECTED)
+  isOnline     Boolean     @default(false) @map("is_online")
+  avgRating    Float       @default(0) @map("avg_rating")
+  totalReviews Int         @default(0) @map("total_reviews")
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  user         User        @relation(fields: [userId], references: [id])
+
+  @@map("courier_profiles")
 }
 
 // ==================== MENU ====================
@@ -235,6 +285,7 @@ model Order {
   xenditInvoiceUrl String?       @map("xendit_invoice_url") // URL Pembayaran Xendit
   paymentMethod   PaymentMethod  @default(XENDIT) @map("payment_method")
   paymentStatus   PaymentStatus  @default(PENDING) @map("payment_status")
+  proofOfDeliveryUrl String?     @map("proof_of_delivery_url")
   notes           String?
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
@@ -275,9 +326,10 @@ model Review {
   id        Int      @id @default(autoincrement())
   orderId   Int      @unique @map("order_id")
   buyerId   Int      @map("buyer_id")
-  storeId   Int      @map("store_id")
-  rating    Int      // 1-5
-  comment   String?
+  storeId       Int      @map("store_id")
+  rating        Int      // 1-5
+  courierRating Int?     @map("courier_rating")
+  comment       String?
   createdAt DateTime @default(now()) @map("created_at")
 
   // Relations

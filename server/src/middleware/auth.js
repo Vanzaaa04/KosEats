@@ -17,7 +17,7 @@ const authenticate = async (req, res, next) => {
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      include: { store: true }
+      include: { store: true, courierProfile: true }
     });
 
     if (!user || !user.isActive) {
@@ -40,10 +40,27 @@ const authenticate = async (req, res, next) => {
   }
 };
 
-// Role-based authorization
+// Role-based authorization (enhanced to check relations)
 const authorize = (...roles) => {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
+    let hasAccess = false;
+    
+    // Check direct role
+    if (roles.includes(req.user.role)) {
+      hasAccess = true;
+    }
+    
+    // Check if acting as SELLER (has a store)
+    if (roles.includes('SELLER') && req.user.store && req.user.store.status === 'APPROVED') {
+      hasAccess = true;
+    }
+    
+    // Check if acting as COURIER (has a courier profile)
+    if (roles.includes('COURIER') && req.user.courierProfile && req.user.courierProfile.status === 'APPROVED') {
+      hasAccess = true;
+    }
+
+    if (!hasAccess) {
       return res.status(403).json({
         success: false,
         message: 'Anda tidak memiliki akses untuk melakukan ini.'

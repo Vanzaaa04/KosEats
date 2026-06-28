@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "../components/Navbar";
 import dynamic from 'next/dynamic';
-import { AlertTriangle, User, Edit3, Save, Camera, Mail, Smartphone, ArrowLeft, MapPin, CheckCircle, ChefHat, LogOut, Key, Briefcase, Crown, Settings, Trash2 } from "lucide-react";
+import { AlertTriangle, User, Edit3, Save, Camera, Mail, Smartphone, ArrowLeft, MapPin, CheckCircle, ChefHat, LogOut, Key, Briefcase, Crown, Settings, Trash2, Bike } from "lucide-react";
 
 const LocationPicker = dynamic(() => import('../components/LocationPicker'), { ssr: false });
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -229,7 +229,7 @@ export default function ProfilePage() {
           <div style={{ position: "relative", width: "120px", height: "120px", margin: "0 auto 1.5rem auto" }}>
             {photoUrl ? (
               <img 
-                src={`http://localhost:5000${photoUrl}`} 
+                src={`${process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000"}${photoUrl}`} 
                 alt="Avatar" 
                 style={{ width: "120px", height: "120px", borderRadius: "50%", objectFit: "cover", background: "#f0f0f0", border: "4px solid white", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}
               />
@@ -330,25 +330,38 @@ export default function ProfilePage() {
         <div className="card" style={{ background: "var(--color-bg)", border: "1px solid var(--color-border)" }}>
           <h3 style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}><Briefcase size={24} /> Navigasi Peran</h3>
           
-          {!hasStore ? (
+          {user.role === 'ADMIN' ? (
             <div style={{ background: "var(--color-primary-light)", padding: "1.5rem", borderRadius: "var(--radius-md)", textAlign: "center" }}>
-              <h4 style={{ marginBottom: "0.5rem" }}>Buka Usaha KosEats</h4>
-              <p className="text-sm" style={{ marginBottom: "1.5rem", color: "#475569" }}>Mulai hasilkan uang dari kamar kos Anda sekarang juga!</p>
-              <Link href="/register/seller" className="btn btn-primary" style={{ display: "inline-block", padding: "0.75rem 2rem" }}>Daftar Jadi Mitra Penjual</Link>
+              <h4 style={{ marginBottom: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}><Crown size={20} className="text-primary" /> Panel Kendali Admin</h4>
+              <p className="text-sm" style={{ marginBottom: "1.5rem", color: "#475569" }}>Anda memiliki hak akses penuh untuk mengelola platform KosEats.</p>
+              <Link href="/admin" className="btn btn-primary" style={{ display: "inline-block", padding: "0.75rem 2rem", width: "100%", transition: "all 0.3s ease" }}>Masuk ke Dashboard Admin</Link>
             </div>
-          ) : (
+          ) : user.role === 'BUYER' ? (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+              <div style={{ background: "var(--color-primary-light)", padding: "1.5rem", borderRadius: "var(--radius-md)", textAlign: "center" }}>
+                <h4 style={{ marginBottom: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}><ChefHat size={20} className="text-primary" /> Buka Usaha KosEats</h4>
+                <p className="text-sm" style={{ marginBottom: "1.5rem", color: "#475569" }}>Mulai hasilkan uang dari masakan Anda.</p>
+                <Link href="/upgrade/seller" className="btn btn-primary" style={{ display: "inline-block", padding: "0.75rem", width: "100%", transition: "all 0.3s ease", fontSize: "0.9rem" }}>Mulai Berjualan</Link>
+              </div>
+              <div style={{ background: "#e0f2fe", padding: "1.5rem", borderRadius: "var(--radius-md)", textAlign: "center" }}>
+                <h4 style={{ marginBottom: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", color: "#0284c7" }}><Bike size={20} /> Gabung Jadi Driver</h4>
+                <p className="text-sm" style={{ marginBottom: "1.5rem", color: "#475569" }}>Manfaatkan motor nganggur Anda.</p>
+                <Link href="/upgrade/courier" className="btn" style={{ background: "#0284c7", color: "white", display: "inline-block", padding: "0.75rem", width: "100%", transition: "all 0.3s ease", fontSize: "0.9rem" }}>Daftar Jadi Driver</Link>
+              </div>
+            </div>
+          ) : user.role === 'SELLER' ? (
             <div style={{ background: "var(--color-warning-light)", padding: "1.5rem", borderRadius: "var(--radius-md)" }}>
               <h4 style={{ marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem" }}><ChefHat size={20} className="text-primary" /> Dashboard Penjual Aktif</h4>
               <p className="text-sm" style={{ marginBottom: "1.5rem", color: "#475569" }}>Kelola pesanan, perbarui menu jualan, dan pantau penghasilan Anda.</p>
-              <button onClick={() => window.location.href = "/seller"} className="btn btn-primary" style={{ display: "inline-block", padding: "0.75rem 2rem" }}>Buka Dashboard Toko</button>
+              <Link href="/seller" className="btn btn-primary" style={{ display: "inline-block", padding: "0.75rem 2rem", transition: "all 0.3s ease" }}>Buka Dashboard Toko</Link>
             </div>
-          )}
-
-          {user.role === 'ADMIN' && (
-            <div style={{ marginTop: "1rem" }}>
-              <Link href="/admin/dashboard" className="btn btn-outline" style={{ width: "100%", padding: "1rem" }}>Masuk Ruang Admin <Crown size={16} /></Link>
+          ) : user.role === 'COURIER' ? (
+            <div style={{ background: "#e0f2fe", padding: "1.5rem", borderRadius: "var(--radius-md)" }}>
+              <h4 style={{ marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem", color: "#0284c7" }}><Bike size={20} /> Dashboard Kurir Aktif</h4>
+              <p className="text-sm" style={{ marginBottom: "1.5rem", color: "#475569" }}>Lihat radar orderan dan kelola tugas pengantaran Anda.</p>
+              <Link href="/courier" className="btn" style={{ background: "#0284c7", color: "white", display: "inline-block", padding: "0.75rem 2rem", transition: "all 0.3s ease" }}>Buka Tugas Kurir</Link>
             </div>
-          )}
+          ) : null}
         </div>
 
         <div className="card" style={{ padding: "2rem" }}>

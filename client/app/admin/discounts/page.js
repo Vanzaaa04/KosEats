@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Gift, Frown, Plus } from "lucide-react";
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
 
 export default function AdminDiscountsPage() {
   const [discounts, setDiscounts] = useState([]);
@@ -93,10 +94,10 @@ export default function AdminDiscountsPage() {
     <div>
       <div className="explore-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <h1>Diskon Platform 🎁</h1>
+          <h1 style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}><Gift size={32} className="text-primary" /> Diskon Platform</h1>
           <p className="text-muted">Kelola promo ongkir dan diskon subsidi dari KosEats.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Tambah Diskon</button>
+        <button className="btn btn-primary hover-scale" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }} onClick={() => setShowModal(true)}><Plus size={20} /> Tambah Diskon</button>
       </div>
 
       <div className="grid gap-6" style={{ marginTop: "2rem" }}>
@@ -104,7 +105,7 @@ export default function AdminDiscountsPage() {
           <p>Memuat diskon...</p>
         ) : discounts.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state-icon">💸</div>
+            <div className="empty-state-icon" style={{ color: "var(--color-muted)" }}><Frown size={48} /></div>
             <p className="empty-state-text">Belum ada promo aktif.</p>
           </div>
         ) : (
@@ -121,7 +122,7 @@ export default function AdminDiscountsPage() {
               </thead>
               <tbody>
                 {discounts.map(discount => (
-                  <tr key={discount.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                  <tr key={discount.id} className="hover-bg-subtle" style={{ borderBottom: "1px solid var(--color-border)" }}>
                     <td style={{ padding: "1rem", fontWeight: "bold" }}>
                       {discount.type === 'DELIVERY' ? 'Gratis Ongkir' : 'Diskon Makanan'}
                     </td>
@@ -157,8 +158,8 @@ export default function AdminDiscountsPage() {
 
       {/* Modal Tambah Diskon */}
       {showModal && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div className="card" style={{ width: "100%", maxWidth: "500px" }}>
+        <div className="modal-overlay" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="card fade-in" style={{ width: "100%", maxWidth: "500px" }}>
             <h3 style={{ marginBottom: "1.5rem" }}>Buat Promo Platform Baru</h3>
             <form onSubmit={handleAddDiscount}>
               <div className="form-group">

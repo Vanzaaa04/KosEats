@@ -9,7 +9,7 @@ const router = express.Router();
 // POST /api/auth/register
 router.post('/register', async (req, res, next) => {
   try {
-    const { name, email, password, role, phone, address, latitude, longitude } = req.body;
+    const { name, email, password, phone, address, latitude, longitude, role, storeName, storeDescription } = req.body;
 
     // Validation
     if (!name || !email || !password) {
@@ -26,6 +26,20 @@ router.post('/register', async (req, res, next) => {
       });
     }
 
+    if (!phone || !/^\d+$/.test(phone) || phone.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nomor HP harus berupa angka dan minimal 8 digit.'
+      });
+    }
+
+    if (!email.toLowerCase().endsWith('@gmail.com')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Harap gunakan email @gmail.com demi keamanan.'
+      });
+    }
+
     // Check if email already exists
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
@@ -35,7 +49,15 @@ router.post('/register', async (req, res, next) => {
       });
     }
 
-    // Only allow BUYER and SELLER registration (ADMIN is created manually)
+    // Validation for Seller
+    if (role === 'SELLER' && !storeName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nama Toko wajib diisi untuk pendaftaran Mitra Penjual.'
+      });
+    }
+
+    // Determine role (default BUYER, allow SELLER)
     const userRole = role === 'SELLER' ? 'SELLER' : 'BUYER';
 
     // Hash password
@@ -60,18 +82,14 @@ router.post('/register', async (req, res, next) => {
       if (userRole === 'SELLER') {
         await tx.store.create({
           data: {
-            name: `Warung ${name}`,
-            description: `Toko milik ${name}`,
-            address: address || '',
-            latitude: latitude ? parseFloat(latitude) : null,
-            longitude: longitude ? parseFloat(longitude) : null,
             userId: newUser.id,
-            openTime: "08:00",
-            closeTime: "20:00",
+            name: storeName,
+            description: storeDescription || null,
             status: 'PENDING'
           }
         });
       }
+
       return newUser;
     });
 
@@ -87,9 +105,7 @@ router.post('/register', async (req, res, next) => {
       data: {
         userId: user.id,
         title: 'Selamat datang di KosEats! 🍚',
-        message: userRole === 'SELLER'
-          ? 'Akun penjual berhasil dibuat. Silakan lengkapi profil toko Anda.'
-          : 'Akun berhasil dibuat. Yuk mulai pesan makanan rumahan terjangkau!',
+        message: 'Akun berhasil dibuat. Yuk mulai pesan makanan rumahan terjangkau!',
         type: 'SYSTEM'
       }
     });
@@ -129,7 +145,7 @@ router.post('/login', async (req, res, next) => {
     // Find user
     const user = await prisma.user.findUnique({
       where: { email },
-      include: { store: true }
+      include: { store: true, courierProfile: true }
     });
 
     if (!user) {
@@ -180,7 +196,14 @@ router.post('/login', async (req, res, next) => {
             id: user.store.id,
             name: user.store.name,
             status: user.store.status,
-            isOpen: user.store.isOpen
+            isOpen: user.store.isOpen,
+            avgRating: user.store.avgRating
+          } : null,
+          courierProfile: user.courierProfile ? {
+            status: user.courierProfile.status,
+            isOnline: user.courierProfile.isOnline,
+            vehicleType: user.courierProfile.vehicleType,
+            vehiclePlate: user.courierProfile.vehiclePlate
           } : null
         },
         token
@@ -211,10 +234,92 @@ router.get('/me', authenticate, async (req, res) => {
         id: user.store.id,
         name: user.store.name,
         status: user.store.status,
-        isOpen: user.store.isOpen
+        isOpen: user.store.isOpen,
+        avgRating: user.store.avgRating
+      } : null,
+      courierProfile: user.courierProfile ? {
+        status: user.courierProfile.status,
+        isOnline: user.courierProfile.isOnline,
+        vehicleType: user.courierProfile.vehicleType,
+        vehiclePlate: user.courierProfile.vehiclePlate
       } : null
     }
   });
+});
+
+// POST /api/auth/upgrade/seller — Upgrade to SELLER
+router.post('/upgrade/seller', authenticate, async (req, res, next) => {
+  try {
+    const { name, description, ktpUrl } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ success: false, message: 'Nama toko wajib diisi' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id }, include: { store: true } });
+    if (user.role === 'SELLER' || user.store) {
+      return res.status(400).json({ success: false, message: 'Anda sudah menjadi penjual atau sedang dalam proses pendaftaran.' });
+    }
+
+    // Default address & lat/lng for store based on user profile if any, else dummy
+    const address = user.address || 'Alamat Toko Default';
+    const latitude = user.latitude || -6.200000;
+    const longitude = user.longitude || 106.816666;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.store.create({
+        data: {
+          userId: user.id,
+          name,
+          description,
+          address,
+          latitude,
+          longitude,
+          status: 'PENDING',
+          openTime: '08:00',
+          closeTime: '22:00',
+          ktpUrl
+        }
+      });
+    });
+
+    res.json({ success: true, message: 'Berhasil mendaftar. Menunggu persetujuan admin.' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/auth/upgrade/courier — Upgrade to COURIER
+router.post('/upgrade/courier', authenticate, async (req, res, next) => {
+  try {
+    const { vehicleType, vehicleBrand, vehicleColor, vehiclePlate, ktpUrl } = req.body;
+    if (!vehicleType || !vehicleBrand || !vehicleColor || !vehiclePlate) {
+      return res.status(400).json({ success: false, message: 'Semua data kendaraan wajib diisi' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id }, include: { courierProfile: true } });
+    if (user.role === 'COURIER' || user.courierProfile) {
+      return res.status(400).json({ success: false, message: 'Anda sudah mendaftar sebagai kurir.' });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.courierProfile.create({
+        data: {
+          userId: user.id,
+          vehicleType,
+          vehicleBrand,
+          vehicleColor,
+          vehiclePlate,
+          ktpUrl,
+          status: 'PENDING'
+        }
+      });
+    });
+
+    res.json({ success: true, message: 'Berhasil mendaftar. Menunggu persetujuan admin.' });
+  } catch (error) {
+    next(error);
+  }
 });
 
 module.exports = router;

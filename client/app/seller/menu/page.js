@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import { ClipboardList, PlusCircle, Image as ImageIcon, Utensils, Leaf } from "lucide-react";
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
 
 export default function SellerMenuPage() {
   const [menus, setMenus] = useState([]);
@@ -67,7 +67,7 @@ export default function SellerMenuPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setFormData(prev => ({ ...prev, photoUrl: `http://localhost:5000${data.data.url}` }));
+        setFormData(prev => ({ ...prev, photoUrl: `${process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000"}${data.data.url}` }));
       } else {
         alert(data.message || "Gagal mengunggah foto");
       }

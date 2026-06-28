@@ -7,7 +7,7 @@ const router = express.Router();
 // POST /api/reviews — Create review (buyer, after order delivered)
 router.post('/', authenticate, authorize('BUYER'), async (req, res, next) => {
   try {
-    const { orderId, rating, comment } = req.body;
+    const { orderId, rating, comment, courierRating } = req.body;
 
     if (!orderId || !rating || rating < 1 || rating > 5) {
       return res.status(400).json({ success: false, message: 'Order ID dan rating (1-5) wajib diisi.' });
@@ -36,13 +36,32 @@ router.post('/', authenticate, authorize('BUYER'), async (req, res, next) => {
         buyerId: req.user.id,
         storeId: order.storeId,
         rating: parseInt(rating),
+        courierRating: courierRating ? parseInt(courierRating) : null,
         comment: comment || null
       },
       include: { buyer: { select: { name: true, photoUrl: true } } }
     });
 
-    // Notify seller
-    const store = await prisma.store.findUnique({ where: { id: order.storeId } });
+    // 1. Hitung ulang rata-rata Bintang
+    const ratingResult = await prisma.review.aggregate({
+      where: { storeId: order.storeId },
+      _avg: { rating: true },
+      _count: true
+    });
+    
+    const newAvgRating = ratingResult._avg.rating ? parseFloat(ratingResult._avg.rating.toFixed(1)) : 0;
+    const newTotalReviews = ratingResult._count;
+
+    // 2. Perbarui tabel Store
+    const store = await prisma.store.update({ 
+      where: { id: order.storeId },
+      data: {
+        avgRating: newAvgRating,
+        totalReviews: newTotalReviews
+      }
+    });
+
+    // 3. Notify seller via DB
     await prisma.notification.create({
       data: {
         userId: store.userId,
@@ -51,6 +70,34 @@ router.post('/', authenticate, authorize('BUYER'), async (req, res, next) => {
         type: 'ORDER'
       }
     });
+
+    // 3.5 Update Courier Rating if applicable
+    if (order.courierId && courierRating) {
+      const courierReviewResult = await prisma.review.aggregate({
+        where: { order: { courierId: order.courierId }, courierRating: { not: null } },
+        _avg: { courierRating: true },
+        _count: true
+      });
+      const newCourierAvg = courierReviewResult._avg.courierRating ? parseFloat(courierReviewResult._avg.courierRating.toFixed(1)) : 0;
+      
+      await prisma.courierProfile.update({
+        where: { userId: order.courierId },
+        data: {
+          avgRating: newCourierAvg,
+          totalReviews: courierReviewResult._count
+        }
+      });
+    }
+
+    // 4. Emit WebSocket event for real-time notification
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${store.userId}`).emit('new_review', {
+        rating: review.rating,
+        comment: review.comment,
+        buyerName: req.user.name
+      });
+    }
 
     res.status(201).json({ success: true, message: 'Ulasan berhasil dikirim!', data: review });
   } catch (error) {

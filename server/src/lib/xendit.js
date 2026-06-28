@@ -126,18 +126,67 @@ async function createInvoice({ externalId, amount, platformFee, subAccountId, de
  * @returns {Object} - { id, status, paid_at, ... }
  */
 async function getInvoice(invoiceId) {
-  const response = await fetch(`${XENDIT_BASE_URL}/v2/invoices/${invoiceId}`, {
-    method: 'GET',
-    headers: {
-      'Authorization': getAuthHeader()
+  try {
+    const response = await fetch(`${XENDIT_BASE_URL}/v2/invoices/${invoiceId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': getAuthHeader()
+      }
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('Xendit getInvoice error:', data);
+      throw new Error(data.message || 'Gagal mengecek status invoice');
     }
+
+    return data;
+  } catch (error) {
+    console.error('Exception in getInvoice:', error);
+    throw error;
+  }
+}
+
+/**
+ * Membuat Invoice untuk Top-Up Saldo.
+ * Tidak menggunakan sub-account atau split payment, karena masuk ke rekening KosEats.
+ * 
+ * @param {Object} params
+ * @param {string} params.externalId - ID unik pesanan (misal "KE-TOPUP-123")
+ * @param {number} params.amount - Total top-up
+ * @param {Object} params.customer - Data pembeli { name, email, phone }
+ */
+async function createTopUpInvoice({ externalId, amount, customer }) {
+  const payload = {
+    external_id: externalId,
+    amount: amount,
+    description: `Top-Up Saldo KosEats - ${customer?.name}`,
+    currency: 'IDR',
+    payment_methods: ['QRIS', 'EWALLET', 'BANK_TRANSFER'],
+    success_redirect_url: process.env.XENDIT_SUCCESS_REDIRECT_URL || 'http://localhost:3000/seller?topup=success',
+    failure_redirect_url: process.env.XENDIT_FAILURE_REDIRECT_URL || 'http://localhost:3000/seller?topup=failed',
+    customer: {
+      given_names: customer?.name || 'User KosEats',
+      email: customer?.email || '',
+      mobile_number: customer?.phone || ''
+    }
+  };
+
+  const response = await fetch(`${XENDIT_BASE_URL}/v2/invoices`, {
+    method: 'POST',
+    headers: {
+      'Authorization': getAuthHeader(),
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
   });
 
   const data = await response.json();
 
   if (!response.ok) {
-    console.error('Xendit getInvoice error:', data);
-    throw new Error(data.message || 'Gagal mengecek status invoice');
+    console.error('Xendit createTopUpInvoice error:', data);
+    throw new Error(data.message || 'Gagal membuat Invoice Top-Up');
   }
 
   return data;
@@ -146,5 +195,6 @@ async function getInvoice(invoiceId) {
 module.exports = {
   createSubAccount,
   createInvoice,
-  getInvoice
+  getInvoice,
+  createTopUpInvoice
 };

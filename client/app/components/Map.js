@@ -24,12 +24,19 @@ const courierIcon = new L.Icon({
 function ChangeView({ center }) {
   const map = useMap();
   useEffect(() => {
-    map.setView(center, map.getZoom());
+    if (map && center && center[0] !== undefined && center[1] !== undefined) {
+      try {
+        map.setView(center, map.getZoom());
+      } catch (e) {
+        console.warn("Leaflet setView error ignored during fast refresh:", e);
+      }
+    }
   }, [center, map]);
   return null;
 }
 
 export default function TrackingMap({ lat, lng }) {
+  if (lat === undefined || lng === undefined) return null;
   const position = [lat, lng];
 
   return (

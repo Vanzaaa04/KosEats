@@ -1,3 +1,6 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import Link from "next/link";
@@ -10,6 +13,20 @@ import { Search, Smartphone, CreditCard, Bike, Leaf, MapPin, Wallet, Handshake, 
  * Sections: Hero, Cara Kerja, Keunggulan, Kategori Menu, CTA Penjual, Statistik
  */
 export default function Home() {
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const loadUser = () => {
+      const storedUser = localStorage.getItem("user");
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+      }
+    };
+    loadUser();
+    window.addEventListener("userUpdated", loadUser);
+    return () => window.removeEventListener("userUpdated", loadUser);
+  }, []);
+
   return (
     <>
       <Navbar />
@@ -206,30 +223,56 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ========== CTA PENJUAL ========== */}
-        <section className="section section-seller-cta">
-          <div className="container">
-            <div className="seller-cta-card">
-              <div className="seller-cta-content">
-                <h2>Punya Masakan Andalan?</h2>
-                <p>
-                  Gabung jadi mitra KosEats dan jangkau ratusan anak kos di
-                  sekitar rumahmu. Pendaftaran gratis, komisi hanya 12%.
-                </p>
-                <Link
-                  href="/register?role=seller"
-                  className="btn btn-primary btn-lg"
-                  id="cta-seller-register"
-                >
-                  <ChefHat size={20} style={{ marginRight: "8px" }} /> Daftar Jadi Penjual
-                </Link>
+        {/* ========== CTA PENJUAL & KURIR ========== */}
+        {(!user || user.role === 'BUYER') && (
+          <section className="section section-seller-cta">
+            <div className="container" style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+              
+              {/* CTA Penjual */}
+              <div className="seller-cta-card">
+                <div className="seller-cta-content">
+                  <h2>Punya Masakan Andalan?</h2>
+                  <p>
+                    Gabung jadi mitra KosEats dan jangkau ratusan anak kos di
+                    sekitar rumahmu. Pendaftaran gratis, komisi hanya 12%.
+                  </p>
+                  <Link
+                    href="/upgrade/seller"
+                    className="btn btn-primary btn-lg"
+                    id="cta-seller-register"
+                  >
+                    <ChefHat size={20} style={{ marginRight: "8px" }} /> Daftar Jadi Penjual
+                  </Link>
+                </div>
+                <div className="seller-cta-visual">
+                  <span className="seller-cta-emoji"><ChefHat size={120} strokeWidth={1.5} color="var(--color-primary)" /></span>
+                </div>
               </div>
-              <div className="seller-cta-visual">
-                <span className="seller-cta-emoji"><ChefHat size={120} strokeWidth={1.5} color="var(--color-primary)" /></span>
+
+              {/* CTA Kurir */}
+              <div className="seller-cta-card" style={{ background: "linear-gradient(135deg, #0284c7, #0369a1)" }}>
+                <div className="seller-cta-content">
+                  <h2 style={{ color: "white" }}>Punya Motor Nganggur?</h2>
+                  <p style={{ color: "rgba(255,255,255,0.9)" }}>
+                    Gabung jadi Driver KosEats dan hasilkan uang tambahan di waktu luangmu. Waktu fleksibel, khusus area kampus.
+                  </p>
+                  <Link
+                    href="/upgrade/courier"
+                    className="btn btn-lg"
+                    style={{ background: "white", color: "#0369a1", fontWeight: "bold" }}
+                    id="cta-courier-register"
+                  >
+                    <Bike size={20} style={{ marginRight: "8px" }} /> Daftar Jadi Driver
+                  </Link>
+                </div>
+                <div className="seller-cta-visual">
+                  <span className="seller-cta-emoji"><Bike size={120} strokeWidth={1.5} color="rgba(255,255,255,0.2)" /></span>
+                </div>
               </div>
+
             </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* ========== TRUST STATS ========== */}
         <section className="section section-trust" id="statistik">

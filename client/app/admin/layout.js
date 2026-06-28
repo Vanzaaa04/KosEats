@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
-import { LayoutDashboard, Store, Scale, Gift, Users } from "lucide-react";
+import { LayoutDashboard, Store, Scale, Gift, Users, Bike } from "lucide-react";
 
 export default function AdminLayout({ children }) {
   const pathname = usePathname();
@@ -32,6 +32,9 @@ export default function AdminLayout({ children }) {
         <Link href="/admin/stores" className={`sidebar-link ${pathname === "/admin/stores" ? "active" : ""}`}>
           <Store size={20} className="sidebar-icon" /> Approval Toko
         </Link>
+        <Link href="/admin/couriers" className={`sidebar-link ${pathname === "/admin/couriers" ? "active" : ""}`}>
+          <Bike size={20} className="sidebar-icon" /> Approval Kurir
+        </Link>
         <Link href="/admin/appeals" className={`sidebar-link ${pathname === "/admin/appeals" ? "active" : ""}`}>
           <Scale size={20} className="sidebar-icon" /> Sengketa (Banding)
         </Link>
@@ -43,7 +46,7 @@ export default function AdminLayout({ children }) {
         </Link>
       </aside>
 
-      <main className="main-with-sidebar">
+      <main className="main-with-sidebar fade-in" style={{ transition: "all 0.3s ease" }}>
         {children}
       </main>
     </>

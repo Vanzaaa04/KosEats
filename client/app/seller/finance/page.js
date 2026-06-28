@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
 
 function formatPrice(price) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(price);
@@ -22,6 +22,7 @@ function formatMonth(monthStr) {
 
 export default function SellerFinancePage() {
   const [finance, setFinance] = useState(null);
+  const [wallet, setWallet] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -39,6 +40,14 @@ export default function SellerFinancePage() {
       const data = await res.json();
       if (data.success) {
         setFinance(data.data);
+      }
+
+      const resWallet = await fetch(`${API_URL}/wallet`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const dataWallet = await resWallet.json();
+      if (dataWallet.success) {
+        setWallet(dataWallet.data);
       }
     } catch (err) {
       console.error(err);
@@ -62,6 +71,28 @@ export default function SellerFinancePage() {
         <h1>Saldo & Komisi 💰</h1>
         <p className="text-muted">Ringkasan pendapatan dan potongan komisi platform KosEats.</p>
       </div>
+
+      {/* Saldo Aktual Dompet */}
+      {wallet && (
+        <div className={`card ${wallet.balance < 0 ? 'card-danger' : 'card-primary'}`} style={{ marginBottom: "2rem", textAlign: "center", padding: "2rem", background: wallet.balance < 0 ? 'var(--color-danger-light)' : 'var(--color-primary-light)', color: wallet.balance < 0 ? 'var(--color-danger)' : 'var(--color-primary)', border: `2px solid ${wallet.balance < 0 ? 'var(--color-danger)' : 'var(--color-primary)'}` }}>
+          <p style={{ fontWeight: "bold", fontSize: "1.1rem" }}>Saldo Dompet Aktual</p>
+          <h1 style={{ fontSize: "3rem", margin: "0.5rem 0" }}>{formatPrice(wallet.balance)}</h1>
+          
+          {wallet.balance < 0 && (
+            <div style={{ marginTop: "1.5rem", background: "#fff", color: "var(--color-text)", padding: "1rem", borderRadius: "8px", textAlign: "left", border: "1px solid var(--color-danger)" }}>
+              <p style={{ fontWeight: "bold", color: "var(--color-danger)", marginBottom: "0.5rem" }}>⚠️ Anda Memiliki Tunggakan Komisi (Kasbon)</p>
+              <p style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
+                Batas maksimal tunggakan Anda adalah <strong>Rp -150.000</strong>. Jika melampaui, Anda tidak bisa memproses pesanan COD Seller Delivery.
+              </p>
+              <p style={{ fontSize: "0.9rem", fontWeight: "bold" }}>Cara Melunasi:</p>
+              <ol style={{ fontSize: "0.9rem", paddingLeft: "1.2rem", margin: 0 }}>
+                <li>Transfer ke Gopay Admin: <strong>0812-3456-7890 (Bos KosEats)</strong></li>
+                <li>Hubungi WhatsApp Admin beserta ID Anda untuk melakukan Top-Up Manual.</li>
+              </ol>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Ringkasan */}
       <div className="grid grid-3" style={{ marginBottom: "2rem" }}>

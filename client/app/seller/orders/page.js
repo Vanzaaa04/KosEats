@@ -3,12 +3,13 @@
 import { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { Bell, FileCheck, MapPin, FileText } from "lucide-react";
 
 const TrackingMap = dynamic(() => import('../../components/Map'), { ssr: false });
 
-const API_URL = "http://localhost:5000/api";
-const SOCKET_URL = "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
 
 function formatPrice(price) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(price);
@@ -33,17 +34,6 @@ export default function SellerOrdersPage() {
       }
     };
   }, []);
-
-  // Listen for tracking updates when modal is open
-  useEffect(() => {
-    if (trackingModal.show && trackingModal.orderId && socketRef.current) {
-      socketRef.current.emit("join_order", trackingModal.orderId);
-      
-      socketRef.current.on("update_location", (data) => {
-        setTrackingModal(prev => ({ ...prev, lat: data.lat, lng: data.lng }));
-      });
-    }
-  }, [trackingModal.show, trackingModal.orderId]);
 
   const fetchOrders = async () => {
     try {
@@ -166,10 +156,10 @@ export default function SellerOrdersPage() {
               <span className="text-sm text-muted">Pengiriman: <strong>{order.deliveryMethod}</strong></span>
               
               <div className="flex gap-2" style={{ marginTop: "1rem" }}>
-                {order.status === 'READY_FOR_PICKUP' && order.deliveryMethod === 'PICKUP' && (
-                  <button className="btn btn-outline btn-sm" style={{ display: "flex", alignItems: "center" }} onClick={() => setTrackingModal({ show: true, orderId: order.id, lat: -7.280, lng: 112.795, title: "Pembeli Menuju ke Sini" })}>
-                    <MapPin size={16} style={{ marginRight: "4px" }} /> Lacak Pembeli
-                  </button>
+                {['WAITING_COURIER', 'READY_FOR_PICKUP', 'DELIVERING'].includes(order.status) && (
+                  <Link href={`/seller/orders/${order.id}`} className="btn btn-outline btn-sm" style={{ display: "flex", alignItems: "center" }}>
+                    <MapPin size={16} style={{ marginRight: "4px" }} /> Lacak & Chat
+                  </Link>
                 )}
                 {order.status === "PENDING" && (
                   <>
@@ -197,24 +187,7 @@ export default function SellerOrdersPage() {
         ))}
       </div>
 
-      {/* Modal Lacak Pembeli (Google Maps) */}
-      {trackingModal.show && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div className="card" style={{ width: "100%", maxWidth: "600px" }}>
-            <div className="flex-between" style={{ marginBottom: "1rem" }}>
-              <h3 style={{ color: "var(--color-primary)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <MapPin size={24} /> {trackingModal.title || "Pelacakan Live"}
-              </h3>
-              <button onClick={() => setTrackingModal({...trackingModal, show: false})} style={{ background: "none", border: "none", fontSize: "1.5rem", cursor: "pointer" }}>&times;</button>
-            </div>
-            <p className="text-sm text-muted" style={{ marginBottom: "1.5rem" }}>Posisi pembeli di-update secara live via WebSocket.</p>
-            
-            <div style={{ borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--color-border)" }}>
-              <TrackingMap lat={trackingModal.lat} lng={trackingModal.lng} />
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }

@@ -25,6 +25,35 @@ router.post('/xendit', async (req, res, next) => {
     // 2. Hanya proses jika tagihan sudah DIBAYAR (PAID atau SETTLED)
     if (status === 'PAID' || status === 'SETTLED') {
       
+      // 2a. Cek apakah ini Top-Up Saldo
+      if (external_id && external_id.startsWith('KE-TOPUP-')) {
+        const tx = await prisma.walletTransaction.findUnique({ where: { externalId: external_id } });
+        if (!tx) return res.status(404).json({ success: false, message: 'Top-up tx not found' });
+        
+        if (tx.status !== 'PAID') {
+          await prisma.$transaction([
+            prisma.walletTransaction.update({
+              where: { id: tx.id },
+              data: { status: 'PAID' }
+            }),
+            prisma.user.update({
+              where: { id: tx.userId },
+              data: { walletBalance: { increment: tx.amount } }
+            }),
+            prisma.notification.create({
+              data: {
+                userId: tx.userId,
+                title: 'Top-Up Berhasil! 💸',
+                message: `Saldo Anda berhasil ditambah sebesar Rp ${tx.amount.toLocaleString('id-ID')}`,
+                type: 'SYSTEM'
+              }
+            })
+          ]);
+          console.log(`✅ Top-Up ${external_id} successful.`);
+        }
+        return res.status(200).json({ success: true, message: 'Top-up webhook received' });
+      }
+
       // 3. Cari pesanan berdasarkan xenditInvoiceId atau externalId
       const order = await prisma.order.findUnique({
         where: { xenditInvoiceId: id }

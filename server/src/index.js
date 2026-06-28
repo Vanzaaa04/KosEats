@@ -18,6 +18,7 @@ const uploadRoutes = require('./routes/upload');
 const courierRoutes = require('./routes/courier');
 const webhookRoutes = require('./routes/webhooks');
 const chatRoutes = require('./routes/chat');
+const walletRoutes = require('./routes/wallet');
 
 const app = express();
 const server = http.createServer(app);
@@ -87,6 +88,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/courier', courierRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/wallet', walletRoutes);
 
 const kycRoutes = require('./routes/kyc');
 app.use('/api/kyc', kycRoutes);
