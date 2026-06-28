@@ -60,14 +60,10 @@ app.get('/api/health', (req, res) => {
 
 // Using Supabase Realtime instead of Socket.io
 
-// Error handling middleware
+// Error Handling
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({
-    success: false,
-    message: 'Terjadi kesalahan pada server',
-    error: process.env.NODE_ENV === 'development' ? err.message : undefined
-  });
+  res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server', error: err.message, stack: err.stack });
 });
 
 const PORT = process.env.PORT || 5000;
