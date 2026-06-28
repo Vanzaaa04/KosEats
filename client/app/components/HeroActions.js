@@ -17,9 +17,15 @@ export default function HeroActions() {
 
   return (
     <div className="hero-actions">
-      <Link href="/explore" className="btn btn-primary btn-lg" id="hero-cta-explore">
-        <Search size={20} style={{ marginRight: "8px" }} /> Jelajahi Menu
-      </Link>
+      {user?.role === 'ADMIN' ? (
+        <Link href="/admin" className="btn btn-primary btn-lg">
+          Dashboard Admin
+        </Link>
+      ) : (
+        <Link href="/explore" className="btn btn-primary btn-lg" id="hero-cta-explore">
+          <Search size={20} style={{ marginRight: "8px" }} /> Jelajahi Menu
+        </Link>
+      )}
       
       {/* Hide secondary button until we know auth state to prevent flash */}
       {!isLoaded ? (
@@ -27,6 +33,18 @@ export default function HeroActions() {
       ) : !user ? (
         <Link href="/register" className="btn btn-outline btn-lg" id="hero-cta-register">
           Daftar Sekarang
+        </Link>
+      ) : user.role === 'ADMIN' ? (
+        <Link href="/admin/users" className="btn btn-outline btn-lg">
+          Kelola Pengguna
+        </Link>
+      ) : user.role === 'SELLER' ? (
+        <Link href="/seller/orders" className="btn btn-outline btn-lg">
+          <ClipboardList size={20} style={{ marginRight: "8px" }} /> Pesanan Masuk
+        </Link>
+      ) : user.role === 'COURIER' ? (
+        <Link href="/courier/orders" className="btn btn-outline btn-lg">
+          <ClipboardList size={20} style={{ marginRight: "8px" }} /> Tugas Antaran
         </Link>
       ) : (
         <Link href="/orders" className="btn btn-outline btn-lg" id="hero-cta-orders">
