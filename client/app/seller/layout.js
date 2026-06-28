@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
-import { LayoutDashboard, Bell, ChefHat, Wallet, Scale, ArrowLeftRight, Store } from "lucide-react";
+import { LayoutDashboard, Bell, ChefHat, Wallet, Scale, ArrowLeftRight, Store, Settings } from "lucide-react";
 
 export default function SellerLayout({ children }) {
   const pathname = usePathname();
@@ -48,6 +48,9 @@ export default function SellerLayout({ children }) {
         </Link>
         <Link href="/seller/appeals" className={`sidebar-link ${pathname === "/seller/appeals" ? "active" : ""}`}>
           <Scale size={20} className="sidebar-icon" /> Banding/Refund
+        </Link>
+        <Link href="/seller/settings" className={`sidebar-link ${pathname === "/seller/settings" ? "active" : ""}`}>
+          <Settings size={20} className="sidebar-icon" /> Pengaturan Toko
         </Link>
         <hr style={{ margin: "1rem 0", borderTop: "1px solid var(--color-border)" }} />
         {/* Toggle Buka Tutup Warung */}

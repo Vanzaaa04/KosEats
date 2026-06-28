@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Navbar from "../components/Navbar";
-import io from 'socket.io-client';
+import { supabase } from '../lib/supabaseClient';
 import dynamic from 'next/dynamic';
 
 const TrackingMap = dynamic(() => import('../components/Map'), { ssr: false });
@@ -14,7 +14,7 @@ const TrackingMap = dynamic(() => import('../components/Map'), { ssr: false });
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
+// SOCKET_URL tidak dipakai lagi karena pindah ke Supabase Realtime
 
 function formatPrice(price) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(price);
@@ -38,44 +38,61 @@ export default function BuyerOrdersPage() {
   const [trackingModal, setTrackingModal] = useState({ show: false, orderId: null, lat: -7.280, lng: 112.795 });
   const [cancelModal, setCancelModal] = useState({ show: false, orderId: null, reason: "", customReason: "" });
   
-  const socketRef = useRef(null);
+  const channelRef = useRef(null);
 
-  // Effect for Tracking Socket
+  // Effect for Tracking Socket via Supabase Broadcast
   useEffect(() => {
     if (trackingModal.show && trackingModal.orderId) {
-      if (!socketRef.current) socketRef.current = io(SOCKET_URL);
-      socketRef.current.emit("join_order", trackingModal.orderId);
-      
-      socketRef.current.on("update_location", (data) => {
-        setTrackingModal(prev => ({ ...prev, lat: data.lat, lng: data.lng }));
-      });
+      if (!channelRef.current) {
+        channelRef.current = supabase.channel(`order_tracking_${trackingModal.orderId}`);
+        
+        channelRef.current.on(
+          'broadcast',
+          { event: 'update_location' },
+          (payload) => {
+            setTrackingModal(prev => ({ ...prev, lat: payload.payload.lat, lng: payload.payload.lng }));
+          }
+        ).subscribe();
+      }
     }
 
     return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
     };
   }, [trackingModal.show, trackingModal.orderId]);
 
   const startBuyerGPS = (orderId) => {
-    if (!socketRef.current) socketRef.current = io(SOCKET_URL);
-    socketRef.current.emit("join_order", orderId);
+    if (!channelRef.current) {
+      channelRef.current = supabase.channel(`order_tracking_${orderId}`);
+      channelRef.current.subscribe();
+    }
     
     let currentLat = -7.285;
     let currentLng = 112.790;
     
-    alert("Mock GPS dinyalakan! Menyiarkan pergerakan Anda ke Penjual secara live...");
+    alert("Mock GPS dinyalakan! Menyiarkan pergerakan Anda secara live via Supabase Broadcast...");
     
     const interval = setInterval(() => {
       currentLat += 0.0003;
       currentLng += 0.0003;
-      socketRef.current.emit("send_location", { orderId, lat: currentLat, lng: currentLng });
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'update_location',
+        payload: { orderId, lat: currentLat, lng: currentLng }
+      });
     }, 2000);
     
     // Stop mock after 30 seconds
-    setTimeout(() => clearInterval(interval), 30000);
+    setTimeout(() => {
+      clearInterval(interval);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    }, 30000);
   };
 
   useEffect(() => {

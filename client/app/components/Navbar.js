@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { Heart, Bell, User, MapPin, Smartphone, Shield, ChefHat, Hand, Home, Search, ClipboardList, Lock, Wallet, Star, Bike } from "lucide-react";
-import { io } from "socket.io-client";
+import { supabase } from '../lib/supabaseClient';
 
 /**
  * Navbar KosEats — Komponen navbar utama
@@ -35,7 +35,7 @@ export default function Navbar() {
 
   // Redirect Logic for Courier
   useEffect(() => {
-    if (user?.role === 'COURIER') {
+    if (user?.courierProfile?.status === 'APPROVED') {
       const isOnline = user.courierProfile?.isOnline;
       if (isOnline) {
         // Force to courier pages if online
@@ -91,32 +91,28 @@ export default function Navbar() {
     // Poll every 30s as a fallback to websocket
     const interval = setInterval(fetchNotifs, 30000);
     
-    // Socket.io for new review notification
-    let socket;
-    const token = localStorage.getItem("token");
-    if (token) {
-      // Kita asumsikan userId ada di payload (bisa juga listen secara generic, tapi lebih baik server emit ke room user)
-      // karena kita perlu id, kita init socket setelah kita dapat `user` dari state, tapi hook ini independen.
-    }
+    // Removed Socket.io placeholder
     return () => clearInterval(interval);
   }, []);
 
-  // Socket Listener for new reviews
+  // Supabase Realtime Listener for new notifications
   useEffect(() => {
     if (!user) return;
-    const socket = io("http://localhost:5000");
     
-    // Join room for this user to receive specific notifications
-    socket.emit("join", user.id); // Sesuai dengan socket.on('join') di index.js backend
-    
-    socket.on("new_review", (data) => {
-      alert(`🔔 Ulasan Baru ⭐ ${data.rating}/5\nDari ${data.buyerName}: "${data.comment || 'Tanpa komentar'}"`);
-      // Update unread count manually to reflect new notif
-      setUnreadCount(prev => prev + 1);
-    });
+    const channel = supabase.channel(`public:Notification:userId=eq.${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'Notification', filter: `userId=eq.${user.id}` },
+        (payload) => {
+          const notif = payload.new;
+          alert(`🔔 ${notif.title}\n${notif.message}`);
+          setUnreadCount(prev => prev + 1);
+        }
+      )
+      .subscribe();
 
     return () => {
-      socket.disconnect();
+      supabase.removeChannel(channel);
     };
   }, [user]);
 
@@ -146,7 +142,7 @@ export default function Navbar() {
       { href: "/admin/couriers", label: "Approval Kurir", icon: <Bike size={20} /> },
       { href: "/admin/appeals", label: "Sengketa", icon: <Search size={20} /> },
     ];
-  } else if (user?.role === 'COURIER') {
+  } else if (user?.courierProfile?.status === 'APPROVED') {
     if (user.courierProfile?.isOnline) {
       // navLinks dikosongkan karena kurir akan menggunakan sidebar kiri di /courier
       navLinks = [];
@@ -205,7 +201,7 @@ export default function Navbar() {
 
       {/* Actions: Notif + Profile */}
       <div className="navbar-actions">
-        {user?.role === 'COURIER' && (
+        {user?.courierProfile?.status === 'APPROVED' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginRight: '1rem', background: 'var(--color-bg)', padding: '4px 12px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
             <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: user.courierProfile?.isOnline ? 'var(--color-primary)' : '#64748b' }}>
               {user.courierProfile?.isOnline ? '🛵 Mode Driver' : '🛒 Mode Pelanggan'}
@@ -347,7 +343,7 @@ export default function Navbar() {
                     <Star size={16} fill="currentColor" /> Rating Toko: {user.store.avgRating || 0}
                   </div>
                 )}
-                {user.role === 'COURIER' && user.courierProfile && (
+                {user.courierProfile?.status === 'APPROVED' && (
                   <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
                     <div style={{ color: 'var(--color-warning)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                       <Star size={16} fill="currentColor" /> Rating Kurir: {user.courierProfile.avgRating || 0}

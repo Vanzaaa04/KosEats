@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const http = require('http');
-const { Server } = require('socket.io');
+// Serverless ready (no socket.io)
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
@@ -21,45 +20,6 @@ const chatRoutes = require('./routes/chat');
 const walletRoutes = require('./routes/wallet');
 
 const app = express();
-const server = http.createServer(app);
-
-// Socket.io for real-time (GPS tracking + notifications)
-const io = new Server(server, {
-  cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
-    methods: ['GET', 'POST']
-  }
-});
-
-io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
-
-  // Buyer or Seller joins an order room
-  socket.on('join_order', (orderId) => {
-    socket.join(`order_${orderId}`);
-    console.log(`Socket ${socket.id} joined order_${orderId}`);
-  });
-
-  // Seller sends live location
-  socket.on('send_location', (data) => {
-    const { orderId, lat, lng } = data;
-    // Broadcast to the buyer in the same order room
-    socket.to(`order_${orderId}`).emit('update_location', { lat, lng });
-  });
-
-  // Chat message event
-  socket.on('send_message', (data) => {
-    // Broadcast to the other person in the room
-    socket.to(`order_${data.orderId}`).emit('receive_message', data);
-  });
-
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-  });
-});
-
-// Make io accessible in routes
-app.set('io', io);
 
 // Middleware
 app.use(cors({
@@ -98,38 +58,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'KosEats API is running 🍚' });
 });
 
-// Socket.io connection handling
-io.on('connection', (socket) => {
-  console.log(`Client connected: ${socket.id}`);
-
-  // Join room based on user ID for targeted notifications
-  socket.on('join', (userId) => {
-    socket.join(`user_${userId}`);
-    console.log(`User ${userId} joined room`);
-  });
-
-  // GPS tracking: courier/seller sends location updates
-  socket.on('location_update', (data) => {
-    const { orderId, latitude, longitude } = data;
-    // Broadcast to buyer watching this order
-    io.to(`order_${orderId}`).emit('location_changed', {
-      orderId,
-      latitude,
-      longitude,
-      timestamp: new Date()
-    });
-  });
-
-  // Join order room for tracking
-  socket.on('track_order', (orderId) => {
-    socket.join(`order_${orderId}`);
-    console.log(`Tracking order ${orderId}`);
-  });
-
-  socket.on('disconnect', () => {
-    console.log(`Client disconnected: ${socket.id}`);
-  });
-});
+// Using Supabase Realtime instead of Socket.io
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -142,7 +71,9 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`🍚 KosEats API running on port ${PORT}`);
-  console.log(`📡 WebSocket ready for GPS tracking & notifications`);
+app.listen(PORT, () => {
+  console.log(`🍚 KosEats API running on port ${PORT} (Stateless / Serverless Ready)`);
 });
+
+// Export app for serverless deployment
+module.exports = app;

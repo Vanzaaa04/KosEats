@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import io from "socket.io-client";
+import { supabase } from '../../lib/supabaseClient';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Bell, FileCheck, MapPin, FileText } from "lucide-react";
@@ -9,7 +9,7 @@ import { Bell, FileCheck, MapPin, FileText } from "lucide-react";
 const TrackingMap = dynamic(() => import('../../components/Map'), { ssr: false });
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
+// SOCKET_URL removed (using Supabase Realtime)
 
 function formatPrice(price) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(price);
@@ -19,18 +19,15 @@ export default function SellerOrdersPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [trackingModal, setTrackingModal] = useState({ show: false, orderId: null, lat: -7.280, lng: 112.795 });
-  const socketRef = useRef(null);
+  const channelRef = useRef(null);
 
   useEffect(() => {
     fetchOrders();
 
-    // Init Socket
-    if (!socketRef.current) socketRef.current = io(SOCKET_URL);
-
     return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
     };
   }, []);
@@ -72,7 +69,7 @@ export default function SellerOrdersPage() {
         // Jika seller yang antar sendiri, nyalakan GPS
         const order = orders.find(o => o.id === id);
         if (newStatus === "DELIVERING" && order.deliveryMethod === "SELLER_DELIVERY") {
-          startGPSMock(id);
+          startLiveTracking(id);
         }
       } else {
         alert(data.message || "Gagal update status");
@@ -82,17 +79,82 @@ export default function SellerOrdersPage() {
     }
   };
 
+  const handleTakeover = async (orderId, action) => {
+    if (!confirm("Apakah Anda yakin ingin mengambil alih pengantaran pesanan ini?")) return;
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_URL}/orders/${orderId}/seller-takeover`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ action })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert("Berhasil mengambil alih pesanan!");
+        fetchOrders();
+      } else {
+        alert(data.message || "Gagal mengambil alih pesanan.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Terjadi kesalahan sistem.");
+    }
+  };
+
+  const startLiveTracking = (orderId) => {
+    if (!channelRef.current) {
+      channelRef.current = supabase.channel(`order_tracking_${orderId}`);
+      channelRef.current.subscribe();
+    }
+
+    if (!navigator.geolocation) {
+      console.warn("Geolocation tidak didukung. Menggunakan mock.");
+      startGPSMock(orderId);
+      return;
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'update_location',
+          payload: {
+            orderId,
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          }
+        });
+      },
+      (error) => {
+        console.warn("Gagal akses GPS. Menggunakan mock.", error);
+        startGPSMock(orderId);
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+    );
+
+    window.activeWatchId = watchId;
+  };
+
   const startGPSMock = (orderId) => {
-    if (!socketRef.current) return;
+    if (!channelRef.current) {
+      channelRef.current = supabase.channel(`order_tracking_${orderId}`);
+      channelRef.current.subscribe();
+    }
     
-    socketRef.current.emit("join_order", orderId);
     let currentLat = -7.280;
     let currentLng = 112.795;
     
     const interval = setInterval(() => {
       currentLat += 0.0002;
       currentLng += 0.0002;
-      socketRef.current.emit("send_location", { orderId, lat: currentLat, lng: currentLng });
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'update_location',
+        payload: { orderId, lat: currentLat, lng: currentLng }
+      });
     }, 2000);
 
     setTimeout(() => clearInterval(interval), 20000);
@@ -126,8 +188,8 @@ export default function SellerOrdersPage() {
                 </span>
                 <p className="text-primary" style={{ fontWeight: "bold", marginTop: "0.5rem" }}>{formatPrice(order.total)}</p>
                 <div style={{ marginTop: "0.5rem" }}>
-                  <span className={`badge ${order.paymentMethod === 'COD' ? 'badge-warning' : 'badge-success'}`}>
-                    {order.paymentMethod === 'COD' ? 'COD (Bayar Tunai)' : 'Lunas (Xendit)'}
+                  <span className={`badge ${order.paymentMethod === 'COD' ? 'badge-warning' : (order.paymentMethod === 'TRANSFER_MANUAL' ? 'badge-info' : 'badge-success')}`}>
+                    {order.paymentMethod === 'COD' ? 'COD (Bayar Tunai)' : (order.paymentMethod === 'TRANSFER_MANUAL' ? 'Transfer Manual' : 'Lunas (Xendit)')}
                   </span>
                 </div>
               </div>
@@ -150,6 +212,21 @@ export default function SellerOrdersPage() {
                   🚨 PESANAN COD: Jangan lupa tagih uang tunai sebesar {formatPrice(order.total)} saat menyerahkan makanan!
                 </div>
               )}
+              {order.paymentMethod === 'TRANSFER_MANUAL' && order.status === 'PENDING' && (
+                <div style={{ marginTop: "1rem", padding: "1rem", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px" }}>
+                  <p style={{ fontWeight: "bold", margin: "0 0 0.5rem 0", color: "#166534" }}>Bukti Transfer Manual</p>
+                  {order.transferProofUrl ? (
+                    <div>
+                      <a href={order.transferProofUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", color: "var(--color-primary)", textDecoration: "underline", marginBottom: "0.5rem" }}>
+                        Lihat Bukti Transfer
+                      </a>
+                      <p style={{ fontSize: "0.875rem", color: "#166534", margin: 0 }}>Silakan periksa mutasi rekening Anda. Jika sesuai, tekan "Terima Pesanan".</p>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: "0.875rem", color: "#991b1b", margin: 0 }}>⏳ Menunggu pembeli mengunggah bukti transfer...</p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex-between">
@@ -164,7 +241,13 @@ export default function SellerOrdersPage() {
                 {order.status === "PENDING" && (
                   <>
                     <button className="btn btn-danger btn-sm" onClick={() => updateStatus(order.id, "CANCELLED")}>Tolak</button>
-                    <button className="btn btn-success btn-sm" onClick={() => updateStatus(order.id, "CONFIRMED")}>Terima Pesanan</button>
+                    {order.paymentMethod === 'TRANSFER_MANUAL' && !order.transferProofUrl ? (
+                      <button className="btn btn-secondary btn-sm" disabled title="Menunggu pembeli unggah bukti transfer">Menunggu Bukti Transfer</button>
+                    ) : (
+                      <button className="btn btn-success btn-sm" onClick={() => updateStatus(order.id, "CONFIRMED")}>
+                        {order.paymentMethod === 'TRANSFER_MANUAL' ? "Verifikasi & Terima" : "Terima Pesanan"}
+                      </button>
+                    )}
                   </>
                 )}
                 {order.status === "CONFIRMED" && (
@@ -176,7 +259,12 @@ export default function SellerOrdersPage() {
                   </button>
                 )}
                 {order.status === "WAITING_COURIER" && (
-                  <span className="text-sm text-warning">Menunggu Kurir...</span>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.5rem" }}>
+                    <span className="text-sm text-warning" style={{ fontWeight: "bold" }}>Menunggu Kurir...</span>
+                    <button className="btn btn-primary btn-sm" onClick={() => handleTakeover(order.id, 'SELLER_DELIVERY')}>
+                      Saya Antar Sendiri
+                    </button>
+                  </div>
                 )}
                 {((order.status === "READY_FOR_PICKUP" && order.deliveryMethod === 'PICKUP') || (order.status === "DELIVERING" && order.deliveryMethod === 'SELLER_DELIVERY')) && (
                   <button className="btn btn-success btn-sm" onClick={() => updateStatus(order.id, "DELIVERED")}>Tandai Selesai (Diserahkan)</button>

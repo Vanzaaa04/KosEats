@@ -94,12 +94,7 @@ router.post('/xendit', async (req, res, next) => {
           ]
         });
 
-        // Emit socket events
-        const io = req.app.get('io');
-        if (io) {
-          io.to(`user_${order.buyerId}`).emit('payment_success', { orderId: order.id });
-          io.to(`user_${order.storeId}`).emit('order_paid', { orderId: order.id });
-        }
+        // (Socket.io removed - UI now updates via Supabase DB listen)
       }
     }
 

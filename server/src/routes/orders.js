@@ -5,6 +5,18 @@ const { createInvoice } = require('../lib/xendit');
 
 const router = express.Router();
 
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+  const R = 6371; // km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
 // POST /api/orders — Create order (buyer)
 router.post('/', authenticate, authorize('BUYER'), async (req, res, next) => {
   try {
@@ -39,12 +51,24 @@ router.post('/', authenticate, authorize('BUYER'), async (req, res, next) => {
       orderItems.push({ menuId: menu.id, quantity: parseInt(item.quantity), price: menu.price, name: menu.name });
     }
 
+    if (deliveryMethod !== 'PICKUP' && (!req.user.latitude || !req.user.longitude)) {
+      return res.status(400).json({ success: false, message: 'Lokasi Anda belum diatur. Silakan atur lokasi pengiriman terlebih dahulu.' });
+    }
+
+    // Calculate distance
+    const distanceKm = calculateDistance(req.user.latitude, req.user.longitude, store.latitude, store.longitude);
+    if (deliveryMethod !== 'PICKUP' && distanceKm > 10) {
+      return res.status(400).json({ success: false, message: `Jarak pengiriman terlalu jauh (${distanceKm.toFixed(1)} km). Maksimal jarak yang diizinkan adalah 10 km.` });
+    }
+
     // Calculate delivery fee
     let deliveryFee = 0;
     if (deliveryMethod === 'SELLER_DELIVERY') {
       deliveryFee = 2000;
+      if (distanceKm > 1) deliveryFee += Math.ceil(distanceKm - 1) * 1000;
     } else if (deliveryMethod === 'COURIER') {
-      deliveryFee = 3000;
+      deliveryFee = 5000;
+      if (distanceKm > 1) deliveryFee += Math.ceil(distanceKm - 1) * 1500;
     }
     // PICKUP = 0
 
@@ -132,66 +156,17 @@ router.post('/', authenticate, authorize('BUYER'), async (req, res, next) => {
       return newOrder;
     });
 
-    // Generate Xendit Invoice (Split Payment)
+    // KosEats V2 - Sistem Mandiri, tidak menggunakan Xendit.
     let paymentUrl = '';
     
-    if (paymentMethod === 'XENDIT') {
-      try {
-        const externalId = `KE-${order.id}-${Date.now()}`;
-        
-        const invoicePayload = {
-          externalId: externalId,
-          amount: total,
-          description: `Pesanan KosEats dari ${store.name}`,
-          customer: {
-            name: req.user.name,
-            email: req.user.email,
-            phone: req.user.phone
-          },
-          items: orderItems.map(item => ({
-            name: item.name,
-            quantity: item.quantity,
-            price: item.price
-          }))
-        };
-
-        // Apply split payment ONLY if the seller has a SubAccount
-        if (store.xenditSubAccountId) {
-          let xenditPlatformFee = platformFee;
-          if (deliveryMethod === 'COURIER') {
-             // Platform menahan ongkir untuk diberikan ke Kurir nanti
-             xenditPlatformFee += deliveryFee;
-          }
-          invoicePayload.subAccountId = store.xenditSubAccountId;
-          invoicePayload.platformFee = xenditPlatformFee;
-        }
-
-        const xenditInvoice = await createInvoice(invoicePayload);
-
-        paymentUrl = xenditInvoice.invoice_url;
-
-        // Update order with Xendit IDs
-        await prisma.order.update({
-          where: { id: order.id },
-          data: { 
-            xenditInvoiceId: xenditInvoice.id,
-            xenditInvoiceUrl: paymentUrl
-          }
-        });
-        
-      } catch (paymentErr) {
-        console.warn("Xendit Error: ", paymentErr.message);
-        return res.status(500).json({ success: false, message: 'Gagal membuat tagihan pembayaran.', error: paymentErr.message });
-      }
+    // Jika payment method == TRANSFER_MANUAL, cukup berikan respons sukses 
+    // dengan info bahwa pesanan berhasil dibuat (tagihan dibayar manual ke rekening penjual)
+    if (paymentMethod === 'TRANSFER_MANUAL') {
+       // Kita tidak butuh link payment, cukup kembalikan sukses
+       console.log('Order Transfer Manual created:', order.id);
     }
 
-    // Emit real-time notification to seller
-    const io = req.app.get('io');
-    io.to(`user_${store.userId}`).emit('new_order', {
-      orderId: order.id,
-      buyerName: req.user.name,
-      total: order.total
-    });
+    // (Socket.io removed - UI now updates via Supabase DB listen)
 
     res.status(201).json({
       success: true,
@@ -217,7 +192,7 @@ router.get('/my', authenticate, authorize('BUYER'), async (req, res, next) => {
       where,
       include: {
         items: { include: { menu: true } },
-        store: { select: { id: true, userId: true, name: true, photoUrl: true, address: true, latitude: true, longitude: true } },
+        store: { select: { id: true, userId: true, name: true, photoUrl: true, address: true, latitude: true, longitude: true, gopayNumber: true, danaNumber: true } },
         courier: { select: { id: true, name: true, phone: true, photoUrl: true, courierProfile: { select: { vehicleType: true, vehicleBrand: true, vehicleColor: true, vehiclePlate: true } } } },
         review: true,
         appeal: true
@@ -298,7 +273,7 @@ router.put('/:id/status', authenticate, authorize('SELLER'), async (req, res, ne
     
     let updated;
 
-    if (status === 'DELIVERED' && order.deliveryMethod === 'SELLER_DELIVERY' && order.paymentMethod === 'COD') {
+    if (status === 'DELIVERED' && order.deliveryMethod === 'SELLER_DELIVERY' && (order.paymentMethod === 'COD' || order.paymentMethod === 'TRANSFER_MANUAL')) {
       const sellerUser = await prisma.user.findUnique({ where: { id: req.user.id } });
       const MAX_DEBT = -150000;
       if (sellerUser.walletBalance - order.platformFee < MAX_DEBT) {
@@ -317,7 +292,7 @@ router.put('/:id/status', authenticate, authorize('SELLER'), async (req, res, ne
             amount: -order.platformFee,
             type: 'COMMISSION_DEDUCTION',
             status: 'PAID',
-            description: `Komisi aplikasi (COD) pesanan #${order.id}`
+            description: `Komisi aplikasi (${order.paymentMethod}) pesanan #${order.id}`
           }
         }),
         prisma.order.update({
@@ -331,11 +306,16 @@ router.put('/:id/status', authenticate, authorize('SELLER'), async (req, res, ne
       ]);
       updated = txResult[2];
     } else {
+      let newPaymentStatus = undefined;
+      if (status === 'CANCELLED') newPaymentStatus = 'REFUNDED';
+      else if (isCODPaid) newPaymentStatus = 'PAID';
+      else if (order.paymentMethod === 'TRANSFER_MANUAL' && status === 'CONFIRMED') newPaymentStatus = 'PAID';
+
       updated = await prisma.order.update({
         where: { id: orderId },
         data: {
           status,
-          paymentStatus: status === 'CANCELLED' ? 'REFUNDED' : (isCODPaid ? 'PAID' : undefined),
+          ...(newPaymentStatus && { paymentStatus: newPaymentStatus }),
           ...(proofOfDeliveryUrl && { proofOfDeliveryUrl })
         }
       });
@@ -360,12 +340,7 @@ router.put('/:id/status', authenticate, authorize('SELLER'), async (req, res, ne
       }
     });
 
-    // Emit real-time notification
-    const io = req.app.get('io');
-    io.to(`user_${order.buyerId}`).emit('order_update', {
-      orderId, status,
-      message: statusMessages[status]
-    });
+    // (Socket.io removed - UI now updates via Supabase DB listen)
 
     res.json({ success: true, message: 'Status pesanan berhasil diperbarui.', data: updated });
   } catch (error) {
@@ -417,11 +392,7 @@ router.put('/:id/cancel', authenticate, authorize('BUYER'), async (req, res, nex
     });
 
     // Notify Seller
-    const io = req.app.get('io');
-    io.to(`user_${order.store.userId}`).emit('order_update', {
-      orderId, status: 'CANCELLED',
-      message: `Pembeli membatalkan pesanan. Alasan: ${reason || '-'}`
-    });
+    // (Socket.io removed - UI now updates via Supabase DB listen)
 
     res.json({ success: true, message: 'Pesanan berhasil dibatalkan.', data: updated });
   } catch (error) {
@@ -451,18 +422,74 @@ router.put('/:id/received', authenticate, authorize('BUYER'), async (req, res, n
       });
 
       // DEDUCT WALLET BALANCE FOR COD
-      if (o.paymentMethod === 'COD' && o.deliveryMethod === 'SELLER_DELIVERY') {
+      if (o.paymentMethod === 'COD') {
+        if (o.deliveryMethod === 'SELLER_DELIVERY') {
+          await tx.user.update({
+            where: { id: o.store.userId },
+            data: { walletBalance: { decrement: o.platformFee } }
+          });
+          
+          await tx.walletTransaction.create({
+            data: {
+              userId: o.store.userId,
+              amount: o.platformFee,
+              type: 'COMMISSION_DEDUCTION',
+              description: `Potongan komisi COD pesanan #${o.id}`,
+              status: 'PAID'
+            }
+          });
+        } else if (o.deliveryMethod === 'COURIER' && o.courierId) {
+          const courierCommission = Math.round(o.deliveryFee * 0.10); // 10% dari ongkir
+          await tx.user.update({
+            where: { id: o.courierId },
+            data: { walletBalance: { decrement: courierCommission } }
+          });
+          
+          await tx.walletTransaction.create({
+            data: {
+              userId: o.courierId,
+              amount: courierCommission,
+              type: 'COMMISSION_DEDUCTION',
+              description: `Potongan komisi pengantaran COD pesanan #${o.id}`,
+              status: 'PAID'
+            }
+          });
+        }
+      } else if (o.paymentMethod === 'TRANSFER_MANUAL') {
+        let totalDeduction = o.platformFee;
+        let description = `Potongan komisi aplikasi (Transfer) pesanan #${o.id}`;
+
+        if (o.deliveryMethod === 'COURIER' && o.courierId) {
+          totalDeduction += o.deliveryFee;
+          description = `Potongan komisi & ongkir (Transfer) pesanan #${o.id}`;
+          
+          const courierNet = Math.round(o.deliveryFee * 0.90);
+          await tx.user.update({
+            where: { id: o.courierId },
+            data: { walletBalance: { increment: courierNet } }
+          });
+          await tx.walletTransaction.create({
+            data: {
+              userId: o.courierId,
+              amount: courierNet,
+              type: 'COMMISSION_RECEIVED',
+              description: `Penerimaan ongkir pesanan #${o.id}`,
+              status: 'PAID'
+            }
+          });
+        }
+
         await tx.user.update({
           where: { id: o.store.userId },
-          data: { walletBalance: { decrement: o.platformFee } }
+          data: { walletBalance: { decrement: totalDeduction } }
         });
         
         await tx.walletTransaction.create({
           data: {
             userId: o.store.userId,
-            amount: o.platformFee,
+            amount: totalDeduction,
             type: 'COMMISSION_DEDUCTION',
-            description: `Potongan komisi COD pesanan #${o.id}`,
+            description,
             status: 'PAID'
           }
         });
@@ -598,6 +625,143 @@ router.put('/:id/seller-takeover', authenticate, authorize('SELLER'), async (req
     res.json({ success: true, message: 'Berhasil mengambil alih pesanan.' });
   } catch (error) {
     next(error);
+  }
+});
+
+// PUT /api/orders/:id/buyer-takeover — Buyer switches to Pick-Up when tired of waiting
+router.put('/:id/buyer-takeover', authenticate, authorize('BUYER'), async (req, res, next) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    
+    const order = await prisma.order.findUnique({ 
+      where: { id: orderId }
+    });
+
+    if (!order || order.buyerId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Akses ditolak.' });
+    }
+
+    if (order.status !== 'WAITING_COURIER') {
+      return res.status(400).json({ success: false, message: 'Pesanan tidak dalam status menunggu kurir.' });
+    }
+
+    const courierFee = order.deliveryFee;
+    const newFee = 0; // Pick-up is 0
+    const refundAmount = courierFee - newFee;
+    const newTotal = order.subtotal + newFee - order.discountAmount;
+
+    // Refund if XENDIT or TRANSFER_MANUAL? 
+    // Wait, if it's COD, buyer hasn't paid.
+    // If TRANSFER_MANUAL, buyer paid to seller. 
+    // If XENDIT, buyer paid to platform.
+    
+    // For now, if TRANSFER_MANUAL or XENDIT, we can credit walletBalance.
+    // Wait, if TRANSFER_MANUAL, seller holds the money. So we deduct from seller and credit buyer? 
+    // Yes! Let's do that.
+    
+    if (refundAmount > 0) {
+      if (order.paymentMethod === 'XENDIT') {
+        await prisma.$transaction([
+          prisma.user.update({ where: { id: order.buyerId }, data: { walletBalance: { increment: refundAmount } } }),
+          prisma.walletTransaction.create({ data: { userId: order.buyerId, amount: refundAmount, type: 'TOP_UP', status: 'PAID', description: `Refund Ongkir (Ubah Pick-Up) pesanan #${order.id}` } }),
+          prisma.order.update({ where: { id: orderId }, data: { deliveryMethod: 'PICKUP', deliveryFee: newFee, total: newTotal, status: 'READY_FOR_PICKUP' } })
+        ]);
+      } else if (order.paymentMethod === 'TRANSFER_MANUAL') {
+        // Transfer refund from seller to buyer
+        await prisma.$transaction([
+          prisma.user.update({ where: { id: order.buyerId }, data: { walletBalance: { increment: refundAmount } } }),
+          prisma.walletTransaction.create({ data: { userId: order.buyerId, amount: refundAmount, type: 'TOP_UP', status: 'PAID', description: `Refund Ongkir (Ubah Pick-Up) pesanan #${order.id}` } }),
+          prisma.user.update({ where: { id: order.storeId }, data: { walletBalance: { decrement: refundAmount } } }),
+          prisma.walletTransaction.create({ data: { userId: order.storeId, amount: -refundAmount, type: 'COMMISSION_DEDUCTION', status: 'PAID', description: `Potongan Refund Ongkir (Ubah Pick-Up) pesanan #${order.id}` } }),
+          prisma.order.update({ where: { id: orderId }, data: { deliveryMethod: 'PICKUP', deliveryFee: newFee, total: newTotal, status: 'READY_FOR_PICKUP' } })
+        ]);
+      } else {
+        // COD
+        await prisma.order.update({ where: { id: orderId }, data: { deliveryMethod: 'PICKUP', deliveryFee: newFee, total: newTotal, status: 'READY_FOR_PICKUP' } });
+      }
+    } else {
+      await prisma.order.update({ where: { id: orderId }, data: { deliveryMethod: 'PICKUP', deliveryFee: newFee, total: newTotal, status: 'READY_FOR_PICKUP' } });
+    }
+
+    // (Socket.io removed - UI now updates via Supabase DB listen)
+
+    res.json({ success: true, message: 'Berhasil mengubah ke Pick-Up.' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT /api/orders/:id/transfer-proof (buyer uploads manual transfer proof)
+router.put('/:id/transfer-proof', authenticate, authorize('BUYER'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { transferProofUrl } = req.body;
+
+    if (!transferProofUrl) {
+      return res.status(400).json({ success: false, message: 'URL Bukti transfer wajib diisi.' });
+    }
+
+    const order = await prisma.order.findUnique({ where: { id: parseInt(id) } });
+    if (!order || order.buyerId !== req.user.id) {
+      return res.status(404).json({ success: false, message: 'Pesanan tidak ditemukan.' });
+    }
+
+    if (order.paymentMethod !== 'TRANSFER_MANUAL') {
+      return res.status(400).json({ success: false, message: 'Bukan metode transfer manual.' });
+    }
+
+    const updated = await prisma.order.update({
+      where: { id: parseInt(id) },
+      data: { 
+        transferProofUrl,
+        paymentStatus: 'VERIFYING'
+      }
+    });
+
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/orders/:id/verify-transfer (seller verifies manual transfer)
+router.put('/:id/verify-transfer', authenticate, authorize('SELLER'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { isVerified } = req.body;
+
+    const order = await prisma.order.findUnique({ where: { id: parseInt(id) }, include: { store: true } });
+    if (!order || order.store.userId !== req.user.id) {
+      return res.status(404).json({ success: false, message: 'Pesanan tidak ditemukan atau akses ditolak.' });
+    }
+
+    if (order.paymentMethod !== 'TRANSFER_MANUAL') {
+      return res.status(400).json({ success: false, message: 'Bukan metode transfer manual.' });
+    }
+
+    if (order.paymentStatus !== 'VERIFYING') {
+      return res.status(400).json({ success: false, message: 'Pesanan tidak dalam status menunggu verifikasi pembayaran.' });
+    }
+
+    const newPaymentStatus = isVerified ? 'PAID' : 'FAILED';
+    const updated = await prisma.order.update({
+      where: { id: parseInt(id) },
+      data: { paymentStatus: newPaymentStatus }
+    });
+    
+    if (isVerified) {
+       // Opsional: Otomatis ubah status order menjadi CONFIRMED jika PAID
+       await prisma.order.update({
+         where: { id: parseInt(id) },
+         data: { status: 'CONFIRMED' }
+       });
+       
+       // (Socket.io removed - UI now updates via Supabase DB listen)
+    }
+
+    res.json({ success: true, message: `Pembayaran berhasil diubah menjadi ${newPaymentStatus}.`, data: updated });
+  } catch (err) {
+    next(err);
   }
 });
 

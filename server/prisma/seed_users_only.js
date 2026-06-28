@@ -13,11 +13,14 @@ async function main() {
   await prisma.appeal.deleteMany();
   await prisma.review.deleteMany();
   await prisma.orderItem.deleteMany();
+  await prisma.message.deleteMany();
   await prisma.order.deleteMany();
   await prisma.discount.deleteMany();
   await prisma.nutrition.deleteMany();
   await prisma.menu.deleteMany();
   await prisma.store.deleteMany();
+  await prisma.courierProfile.deleteMany();
+  await prisma.walletTransaction.deleteMany();
   await prisma.user.deleteMany();
 
   const passwordHash = await bcrypt.hash('password123', 10);

@@ -51,8 +51,7 @@ router.post('/', authenticate, authorize('BUYER'), async (req, res, next) => {
       }
     });
 
-    const io = req.app.get('io');
-    io.to(`user_${order.store.userId}`).emit('new_appeal', { appealId: appeal.id, orderId: order.id });
+    // (Socket.io removed - UI now updates via Supabase DB listen)
 
     res.status(201).json({ success: true, message: 'Banding berhasil diajukan.', data: appeal });
   } catch (error) {
@@ -115,11 +114,7 @@ router.put('/:id/seller-respond', authenticate, authorize('SELLER'), async (req,
       ]);
     }
 
-    const io = req.app.get('io');
-    io.to(`user_${appeal.buyerId}`).emit('appeal_update', {
-      appealId: appeal.id,
-      status: accept ? 'ACCEPTED' : 'REJECTED_SELLER'
-    });
+    // (Socket.io removed - UI now updates via Supabase DB listen)
 
     res.json({ success: true, message: accept ? 'Banding diterima, refund diproses.' : 'Banding ditolak.' });
   } catch (error) {

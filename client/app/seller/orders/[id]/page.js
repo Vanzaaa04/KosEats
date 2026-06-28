@@ -4,13 +4,13 @@ import { useState, useEffect, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import io from "socket.io-client";
+import { supabase } from '../../../../lib/supabaseClient';
 import { Send, Image as ImageIcon, MapPin, ArrowLeft, AlertTriangle } from "lucide-react";
 
 const TrackingMap = dynamic(() => import("../../../components/Map"), { ssr: false });
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
+// SOCKET_URL removed
 
 export default function OrderDetailPage({ params }) {
   // Use React.use() to unwrap params in Next.js 15
@@ -27,7 +27,7 @@ export default function OrderDetailPage({ params }) {
   
   // Tracking
   const [courierLocation, setCourierLocation] = useState(null);
-  const socketRef = useRef(null);
+  const channelRef = useRef(null);
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -45,36 +45,64 @@ export default function OrderDetailPage({ params }) {
   useEffect(() => {
     if (!user) return;
 
-    // Connect to Socket
-    socketRef.current = io(SOCKET_URL);
-    socketRef.current.emit("join_order", orderId);
+    if (!channelRef.current) {
+      channelRef.current = supabase.channel(`order_${orderId}`);
+      
+      channelRef.current.on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `order_id=eq.${orderId}` },
+        (payload) => {
+          const msgDB = payload.new;
+          if (msgDB.sender_id !== user.id) {
+            const msg = {
+              id: msgDB.id,
+              orderId: msgDB.order_id,
+              senderId: msgDB.sender_id,
+              receiverId: msgDB.receiver_id,
+              content: msgDB.content,
+              photoUrl: msgDB.photo_url,
+              createdAt: msgDB.created_at,
+              sender: { name: "Lawan Bicara" }
+            };
+            setMessages((prev) => [...prev, msg]);
+            setTimeout(scrollToBottom, 300);
+          }
+        }
+      );
 
-    // Listen for incoming messages
-    socketRef.current.on("receive_message", (msg) => {
-      setMessages((prev) => [...prev, msg]);
-      scrollToBottom();
-    });
+      channelRef.current.on(
+        'broadcast',
+        { event: 'update_location' },
+        (payload) => {
+          setCourierLocation({ lat: payload.payload.lat, lng: payload.payload.lng });
+        }
+      );
 
-    // Listen for location updates
-    socketRef.current.on("update_location", (loc) => {
-      setCourierLocation({ lat: loc.lat, lng: loc.lng });
-    });
+      channelRef.current.subscribe();
+    }
 
     return () => {
-      if (socketRef.current) socketRef.current.disconnect();
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, [user, orderId]);
 
   useEffect(() => {
     let watchId;
-    if (order && socketRef.current && ['SELLER_DELIVERY', 'COURIER'].includes(order.deliveryMethod) && ['DELIVERING', 'WAITING_COURIER'].includes(order.status)) {
+    if (order && channelRef.current && ['SELLER_DELIVERY', 'COURIER'].includes(order.deliveryMethod) && ['DELIVERING', 'WAITING_COURIER'].includes(order.status)) {
       if (navigator.geolocation) {
         watchId = navigator.geolocation.watchPosition(
           (pos) => {
             const lat = pos.coords.latitude;
             const lng = pos.coords.longitude;
             setCourierLocation({ lat, lng });
-            socketRef.current.emit("send_location", { orderId: order.id, lat, lng });
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'update_location',
+              payload: { orderId: order.id, lat, lng }
+            });
           },
           (err) => console.error("GPS error:", err),
           { enableHighAccuracy: true }
@@ -177,10 +205,7 @@ export default function OrderDetailPage({ params }) {
     setNewMessage("");
     scrollToBottom();
 
-    // Send via socket
-    if (socketRef.current) {
-      socketRef.current.emit("send_message", optimisticMsg);
-    }
+    // No need to send via socket, DB insert will trigger postgres_changes for receiver
 
     // Save to DB
     try {

@@ -52,7 +52,9 @@ enum OrderStatus {
 
 enum PaymentStatus {
   PENDING
+  VERIFYING
   PAID
+  FAILED
   REFUNDED
 }
 
@@ -85,6 +87,7 @@ enum NotificationType {
 enum PaymentMethod {
   XENDIT
   COD
+  TRANSFER_MANUAL
 }
 
 enum WalletTxType {
@@ -163,6 +166,8 @@ model Store {
   isOpen          Boolean     @default(false) @map("is_open")
   status          StoreStatus @default(PENDING)
   xenditSubAccountId String?  @map("xendit_sub_account_id") // ID Sub-Akun Xendit untuk pencairan/split payment otomatis
+  gopayNumber     String?     @map("gopay_number")
+  danaNumber      String?     @map("dana_number")
   avgRating       Float       @default(0) @map("avg_rating")
   totalReviews    Int         @default(0) @map("total_reviews")
   createdAt       DateTime    @default(now()) @map("created_at")
@@ -285,6 +290,7 @@ model Order {
   xenditInvoiceUrl String?       @map("xendit_invoice_url") // URL Pembayaran Xendit
   paymentMethod   PaymentMethod  @default(XENDIT) @map("payment_method")
   paymentStatus   PaymentStatus  @default(PENDING) @map("payment_status")
+  transferProofUrl String?       @map("transfer_proof_url")
   proofOfDeliveryUrl String?     @map("proof_of_delivery_url")
   notes           String?
   createdAt       DateTime       @default(now()) @map("created_at")

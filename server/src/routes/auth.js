@@ -57,8 +57,9 @@ router.post('/register', async (req, res, next) => {
       });
     }
 
-    // Determine role (default BUYER, allow SELLER)
-    const userRole = role === 'SELLER' ? 'SELLER' : 'BUYER';
+    // Determine role (default BUYER)
+    const validRoles = ['BUYER', 'SELLER', 'COURIER', 'ADMIN'];
+    const userRole = validRoles.includes(role) ? role : 'BUYER';
 
     // Hash password
     const salt = await bcrypt.genSalt(10);
@@ -85,6 +86,22 @@ router.post('/register', async (req, res, next) => {
             userId: newUser.id,
             name: storeName,
             description: storeDescription || null,
+            address: address || 'Alamat Toko Belum Diatur',
+            latitude: latitude ? parseFloat(latitude) : -6.200000,
+            longitude: longitude ? parseFloat(longitude) : 106.816666,
+            openTime: '08:00',
+            closeTime: '20:00',
+            status: 'PENDING'
+          }
+        });
+      } else if (userRole === 'COURIER') {
+        await tx.courierProfile.create({
+          data: {
+            userId: newUser.id,
+            vehicleType: req.body.vehicleType || 'MOTORCYCLE',
+            vehicleBrand: req.body.vehicleBrand || 'Honda',
+            vehicleColor: req.body.vehicleColor || 'Hitam',
+            vehiclePlate: req.body.vehiclePlate || 'B 1234 XXX',
             status: 'PENDING'
           }
         });

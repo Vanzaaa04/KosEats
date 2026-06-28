@@ -29,11 +29,12 @@ export default function CourierDashboard() {
           setUser(data.data);
           localStorage.setItem("user", JSON.stringify(data.data));
         } else {
-          router.push("/");
+          console.error("auth/me failed or no courier profile", data);
+          // router.push("/"); // REMOVED to prevent infinite loop
         }
       } catch (error) {
         console.error("Failed to load courier", error);
-        router.push("/");
+        // router.push("/"); // REMOVED to prevent infinite loop
       } finally {
         setLoading(false);
       }

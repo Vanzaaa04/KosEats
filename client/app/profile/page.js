@@ -355,7 +355,7 @@ export default function ProfilePage() {
               <p className="text-sm" style={{ marginBottom: "1.5rem", color: "#475569" }}>Kelola pesanan, perbarui menu jualan, dan pantau penghasilan Anda.</p>
               <Link href="/seller" className="btn btn-primary" style={{ display: "inline-block", padding: "0.75rem 2rem", transition: "all 0.3s ease" }}>Buka Dashboard Toko</Link>
             </div>
-          ) : user.role === 'COURIER' ? (
+          ) : user.courierProfile?.status === 'APPROVED' ? (
             <div style={{ background: "#e0f2fe", padding: "1.5rem", borderRadius: "var(--radius-md)" }}>
               <h4 style={{ marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem", color: "#0284c7" }}><Bike size={20} /> Dashboard Kurir Aktif</h4>
               <p className="text-sm" style={{ marginBottom: "1.5rem", color: "#475569" }}>Lihat radar orderan dan kelola tugas pengantaran Anda.</p>

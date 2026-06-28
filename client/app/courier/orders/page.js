@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import io from "socket.io-client";
+import { supabase } from '../../../lib/supabaseClient';
 import Navbar from "../../components/Navbar";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
+// SOCKET_URL removed (using Supabase Realtime)
 
 function formatPrice(price) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(price);
@@ -19,16 +19,17 @@ export default function CourierOrdersPage() {
   const [uploadingPoD, setUploadingPoD] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   
-  const socketRef = useRef(null);
+  const channelRef = useRef(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
     fetchData();
 
-    socketRef.current = io(SOCKET_URL);
-
     return () => {
-      if (socketRef.current) socketRef.current.disconnect();
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, []);
 
@@ -94,8 +95,9 @@ export default function CourierOrdersPage() {
       const data = await res.json();
       if (data.success) {
         fetchData();
+        
         if (newStatus === "DELIVERING") {
-          startGPSMock(id);
+          startLiveTracking(id);
           alert("Mode Pengantaran Aktif! GPS Anda disiarkan ke Pembeli.");
         }
         if (newStatus === "DELIVERED") {
@@ -144,10 +146,45 @@ export default function CourierOrdersPage() {
     }
   };
 
+  const startLiveTracking = (orderId) => {
+    if (!channelRef.current) {
+      channelRef.current = supabase.channel(`order_tracking_${orderId}`);
+      channelRef.current.subscribe();
+    }
+
+    if (!navigator.geolocation) {
+      console.warn("Geolocation tidak didukung. Menggunakan mock.");
+      startGPSMock(orderId);
+      return;
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'update_location',
+          payload: {
+            orderId,
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          }
+        });
+      },
+      (error) => {
+        console.warn("Gagal akses GPS. Menggunakan mock.", error);
+        startGPSMock(orderId);
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+    );
+
+    window.activeWatchId = watchId;
+  };
+
   const startGPSMock = (orderId) => {
-    if (!socketRef.current) return;
-    
-    socketRef.current.emit("join_order", orderId);
+    if (!channelRef.current) {
+      channelRef.current = supabase.channel(`order_tracking_${orderId}`);
+      channelRef.current.subscribe();
+    }
 
     // Titik awal (misal di ITS)
     let currentLat = -7.280;
@@ -158,16 +195,24 @@ export default function CourierOrdersPage() {
       currentLat += 0.0002; // gerak sedikit ke utara
       currentLng += 0.0002; // gerak sedikit ke timur
       
-      socketRef.current.emit("send_location", {
-        orderId,
-        lat: currentLat,
-        lng: currentLng
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'update_location',
+        payload: {
+          orderId,
+          lat: currentLat,
+          lng: currentLng
+        }
       });
     }, 2000);
 
     // Berhenti setelah 20 detik (10 kali jalan) untuk efisiensi demo
     setTimeout(() => {
       clearInterval(interval);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
       console.log("Mock GPS stopped for order", orderId);
     }, 20000);
   };
@@ -218,6 +263,16 @@ export default function CourierOrdersPage() {
                   <p className="text-sm"><strong>Antar ke:</strong> {order.buyer.name}</p>
                   <p className="text-sm text-muted">{order.buyer.address || "Area Kampus"}</p>
                 </div>
+                {order.paymentMethod === 'COD' && (
+                  <div className="text-sm text-error" style={{ marginBottom: "1rem", padding: "0.5rem", background: "rgba(231, 76, 60, 0.1)", borderRadius: "4px", fontWeight: "bold" }}>
+                    🚨 COD (Talangan): Siapkan Uang Tunai Rp {new Intl.NumberFormat("id-ID").format(order.subtotal)} untuk Penjual. Tagih Pembeli Rp {new Intl.NumberFormat("id-ID").format(order.total)}.
+                  </div>
+                )}
+                {(order.paymentMethod === 'TRANSFER_MANUAL' || order.paymentMethod === 'XENDIT') && (
+                  <div className="text-sm text-success" style={{ marginBottom: "1rem", padding: "0.5rem", background: "rgba(46, 204, 113, 0.1)", borderRadius: "4px", fontWeight: "bold" }}>
+                    ✅ LUNAS: Langsung ambil dan antar. Ongkir masuk ke Saldo Dompetmu.
+                  </div>
+                )}
                 <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => acceptOrder(order.id)}>
                   Terima Orderan Ini
                 </button>
@@ -247,6 +302,17 @@ export default function CourierOrdersPage() {
                   <p className="text-sm"><strong>Penerima:</strong> {order.buyer.name} ({order.buyer.phone || "-"})</p>
                   <p className="text-sm text-muted">Tujuan: {order.buyer.address || "Area Kampus"}</p>
                 </div>
+
+                {order.paymentMethod === 'COD' && (
+                  <div className="text-sm text-error" style={{ marginBottom: "1rem", padding: "0.5rem", background: "rgba(231, 76, 60, 0.1)", borderRadius: "4px", fontWeight: "bold" }}>
+                    🚨 COD: Anda talangi Rp {new Intl.NumberFormat("id-ID").format(order.subtotal)} ke Penjual, lalu TAGIH TUNAI Rp {new Intl.NumberFormat("id-ID").format(order.total)} ke Pembeli.
+                  </div>
+                )}
+                {(order.paymentMethod === 'TRANSFER_MANUAL' || order.paymentMethod === 'XENDIT') && (
+                  <div className="text-sm text-success" style={{ marginBottom: "1rem", padding: "0.5rem", background: "rgba(46, 204, 113, 0.1)", borderRadius: "4px", fontWeight: "bold" }}>
+                    ✅ LUNAS: Serahkan makanan ke pembeli. Tidak perlu menagih uang tunai.
+                  </div>
+                )}
 
                 {order.status === 'WAITING_COURIER' && (
                   <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => updateStatus(order.id, "DELIVERING")}>

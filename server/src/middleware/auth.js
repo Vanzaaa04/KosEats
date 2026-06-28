@@ -50,6 +50,11 @@ const authorize = (...roles) => {
       hasAccess = true;
     }
     
+    // Implicitly allow anyone to act as a BUYER
+    if (roles.includes('BUYER')) {
+      hasAccess = true;
+    }
+    
     // Check if acting as SELLER (has a store)
     if (roles.includes('SELLER') && req.user.store && req.user.store.status === 'APPROVED') {
       hasAccess = true;

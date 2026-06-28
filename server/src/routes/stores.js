@@ -170,7 +170,10 @@ router.put('/my', authenticate, authorize('SELLER'), async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Anda belum memiliki toko.' });
     }
 
-    const { name, description, address, photoUrl, latitude, longitude, openTime, closeTime, deliveryRadiusKm, isOpen } = req.body;
+    const { name, description, address, photoUrl, latitude, longitude, openTime, closeTime, deliveryRadiusKm, isOpen, gopayNumber, danaNumber } = req.body;
+
+    if (gopayNumber && !gopayNumber.startsWith('08')) return res.status(400).json({ success: false, message: 'Nomor GoPay harus diawali dengan 08' });
+    if (danaNumber && !danaNumber.startsWith('08')) return res.status(400).json({ success: false, message: 'Nomor DANA harus diawali dengan 08' });
 
     const updated = await prisma.store.update({
       where: { id: req.user.store.id },
@@ -184,7 +187,9 @@ router.put('/my', authenticate, authorize('SELLER'), async (req, res, next) => {
         ...(openTime && { openTime }),
         ...(closeTime && { closeTime }),
         ...(deliveryRadiusKm !== undefined && { deliveryRadiusKm: parseFloat(deliveryRadiusKm) }),
-        ...(isOpen !== undefined && { isOpen })
+        ...(isOpen !== undefined && { isOpen }),
+        ...(gopayNumber !== undefined && { gopayNumber }),
+        ...(danaNumber !== undefined && { danaNumber })
       }
     });
 

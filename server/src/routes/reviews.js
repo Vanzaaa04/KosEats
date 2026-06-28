@@ -89,15 +89,7 @@ router.post('/', authenticate, authorize('BUYER'), async (req, res, next) => {
       });
     }
 
-    // 4. Emit WebSocket event for real-time notification
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`user_${store.userId}`).emit('new_review', {
-        rating: review.rating,
-        comment: review.comment,
-        buyerName: req.user.name
-      });
-    }
+    // 4. (Socket.io removed - UI now updates via Supabase DB listen)
 
     res.status(201).json({ success: true, message: 'Ulasan berhasil dikirim!', data: review });
   } catch (error) {

@@ -57,7 +57,7 @@ export default function Footer() {
                 <>
                   <li><Link href="/profile">Profil Saya</Link></li>
                   {user.role === 'SELLER' && <li><Link href="/seller">Dashboard Toko</Link></li>}
-                  {user.role === 'COURIER' && <li><Link href="/courier">Tugas Kurir</Link></li>}
+                  {user.courierProfile?.status === 'APPROVED' && <li><Link href="/courier">Tugas Kurir</Link></li>}
                 </>
               )}
             </ul>

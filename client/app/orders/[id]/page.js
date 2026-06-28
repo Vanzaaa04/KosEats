@@ -5,13 +5,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "../../components/Navbar";
 import dynamic from "next/dynamic";
-import io from "socket.io-client";
-import { Send, Image as ImageIcon, MapPin, ArrowLeft, PackageSearch, CheckCircle, AlertTriangle } from "lucide-react";
+import { supabase } from '../../../lib/supabaseClient';
+import { Send, Image as ImageIcon, MapPin, ArrowLeft, PackageSearch, CheckCircle, AlertTriangle, UploadCloud, Wallet } from "lucide-react";
 
 const TrackingMap = dynamic(() => import("../../components/Map"), { ssr: false });
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}`;
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
+// SOCKET_URL removed (using Supabase Realtime)
 
 export default function OrderDetailPage({ params }) {
   // Use React.use() to unwrap params in Next.js 15
@@ -24,11 +24,12 @@ export default function OrderDetailPage({ params }) {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [uploadingProof, setUploadingProof] = useState(false);
   const [user, setUser] = useState(null);
   
   // Tracking
   const [courierLocation, setCourierLocation] = useState(null);
-  const socketRef = useRef(null);
+  const channelRef = useRef(null);
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -46,36 +47,64 @@ export default function OrderDetailPage({ params }) {
   useEffect(() => {
     if (!user) return;
 
-    // Connect to Socket
-    socketRef.current = io(SOCKET_URL);
-    socketRef.current.emit("join_order", orderId);
+    if (!channelRef.current) {
+      channelRef.current = supabase.channel(`order_${orderId}`);
+      
+      channelRef.current.on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `order_id=eq.${orderId}` },
+        (payload) => {
+          const msgDB = payload.new;
+          if (msgDB.sender_id !== user.id) {
+            const msg = {
+              id: msgDB.id,
+              orderId: msgDB.order_id,
+              senderId: msgDB.sender_id,
+              receiverId: msgDB.receiver_id,
+              content: msgDB.content,
+              photoUrl: msgDB.photo_url,
+              createdAt: msgDB.created_at,
+              sender: { name: "Lawan Bicara" }
+            };
+            setMessages((prev) => [...prev, msg]);
+            setTimeout(scrollToBottom, 300);
+          }
+        }
+      );
 
-    // Listen for incoming messages
-    socketRef.current.on("receive_message", (msg) => {
-      setMessages((prev) => [...prev, msg]);
-      scrollToBottom();
-    });
+      channelRef.current.on(
+        'broadcast',
+        { event: 'update_location' },
+        (payload) => {
+          setCourierLocation({ lat: payload.payload.lat, lng: payload.payload.lng });
+        }
+      );
 
-    // Listen for location updates
-    socketRef.current.on("update_location", (loc) => {
-      setCourierLocation({ lat: loc.lat, lng: loc.lng });
-    });
+      channelRef.current.subscribe();
+    }
 
     return () => {
-      if (socketRef.current) socketRef.current.disconnect();
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, [user, orderId]);
 
   useEffect(() => {
     let watchId;
-    if (order && socketRef.current && order.deliveryMethod === 'PICKUP' && ['COOKING', 'READY_FOR_PICKUP'].includes(order.status)) {
+    if (order && channelRef.current && order.deliveryMethod === 'PICKUP' && ['COOKING', 'READY_FOR_PICKUP'].includes(order.status)) {
       if (navigator.geolocation) {
         watchId = navigator.geolocation.watchPosition(
           (pos) => {
             const lat = pos.coords.latitude;
             const lng = pos.coords.longitude;
             setCourierLocation({ lat, lng });
-            socketRef.current.emit("send_location", { orderId: order.id, lat, lng });
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'update_location',
+              payload: { orderId: order.id, lat, lng }
+            });
           },
           (err) => console.error("GPS error:", err),
           { enableHighAccuracy: true }
@@ -153,10 +182,7 @@ export default function OrderDetailPage({ params }) {
     setNewMessage("");
     scrollToBottom();
 
-    // Send via socket
-    if (socketRef.current) {
-      socketRef.current.emit("send_message", optimisticMsg);
-    }
+    // Send via socket removed, using DB listen
 
     // Save to DB
     try {
@@ -209,6 +235,74 @@ export default function OrderDetailPage({ params }) {
     }
   };
 
+  const handleTransferProofUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setUploadingProof(true);
+    const formData = new FormData();
+    formData.append("image", file);
+    
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_URL}/upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        const fullUrl = `${API_URL.replace("/api", "")}${data.data.url}`;
+        const resPut = await fetch(`${API_URL}/orders/${orderId}/transfer-proof`, {
+          method: "PUT",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ transferProofUrl: fullUrl })
+        });
+        const putData = await resPut.json();
+        if (putData.success) {
+          setOrder({ ...order, transferProofUrl: fullUrl });
+          alert("Bukti transfer berhasil diunggah!");
+        } else {
+          alert(putData.message || "Gagal menyimpan bukti transfer.");
+        }
+      } else {
+        alert("Gagal upload foto");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Terjadi kesalahan saat upload");
+    } finally {
+      setUploadingProof(false);
+      e.target.value = null;
+    }
+  };
+
+  const handleSwitchToPickup = async () => {
+    if (!confirm("Yakin ingin mengambil pesanan ini sendiri? Ongkir akan dikembalikan ke dompet Anda jika menggunakan Xendit atau Transfer Manual.")) return;
+    
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_URL}/orders/${orderId}/buyer-takeover`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert("Berhasil! Silakan ambil pesanan Anda ke lokasi penjual.");
+        fetchOrderDetails();
+      } else {
+        alert(data.message || "Gagal mengubah pesanan.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Terjadi kesalahan sistem.");
+    }
+  };
+
   if (loading) {
     return (
       <>
@@ -257,13 +351,55 @@ export default function OrderDetailPage({ params }) {
                 </p>
               </div>
 
+              {order.paymentMethod === 'TRANSFER_MANUAL' && (
+                <div style={{ padding: "1.5rem", background: "white", borderBottom: "1px solid var(--color-border)" }}>
+                  <h4 style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}><Wallet size={20} className="text-primary"/> Transfer Manual</h4>
+                  {order.transferProofUrl ? (
+                    <div style={{ padding: "1rem", backgroundColor: "#f0fdf4", color: "#166534", borderRadius: "8px", textAlign: "center" }}>
+                      <CheckCircle size={32} style={{ margin: "0 auto 0.5rem" }} />
+                      <p style={{ fontWeight: "bold", margin: 0 }}>Bukti transfer berhasil diunggah!</p>
+                      <p style={{ fontSize: "0.875rem", margin: "0.5rem 0 0" }}>Menunggu verifikasi dari penjual.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ marginBottom: "1rem", padding: "1rem", backgroundColor: "#fff7ed", border: "1px solid #fed7aa", borderRadius: "8px" }}>
+                        <p style={{ margin: "0 0 0.5rem 0", fontSize: "0.875rem", color: "#9a3412" }}>Silakan transfer sebesar <strong>Rp {order.total.toLocaleString('id-ID')}</strong> ke salah satu nomor berikut:</p>
+                        <ul style={{ margin: 0, paddingLeft: "1.5rem", color: "#9a3412", fontWeight: "bold" }}>
+                          {order.store.gopayNumber && <li>GoPay: {order.store.gopayNumber}</li>}
+                          {order.store.danaNumber && <li>DANA: {order.store.danaNumber}</li>}
+                          {!order.store.gopayNumber && !order.store.danaNumber && <li>Penjual belum mendaftarkan nomor GoPay/DANA. Harap hubungi penjual via chat.</li>}
+                        </ul>
+                      </div>
+                      
+                      <div style={{ border: "2px dashed var(--color-border)", borderRadius: "8px", padding: "2rem", textAlign: "center" }}>
+                        <input type="file" id="transferProof" accept="image/*" style={{ display: "none" }} onChange={handleTransferProofUpload} disabled={uploadingProof} />
+                        <label htmlFor="transferProof" style={{ cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
+                          <UploadCloud size={32} className="text-muted" />
+                          <span style={{ fontWeight: "bold", color: "var(--color-primary)" }}>
+                            {uploadingProof ? "Mengunggah..." : "Klik untuk Upload Bukti Transfer"}
+                          </span>
+                          <span className="text-xs text-muted">Format: JPG, PNG (Max 5MB)</span>
+                        </label>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               {order.status === 'WAITING_COURIER' && (
                 <div style={{ padding: "2rem", textAlign: "center", background: "#f8f9fa", borderBottom: "1px solid var(--color-border)" }}>
                   <div className="pulse" style={{ display: "inline-flex", padding: "1.5rem", background: "var(--color-primary-light)", borderRadius: "50%", marginBottom: "1rem" }}>
                     <PackageSearch size={48} color="var(--color-primary)" />
                   </div>
                   <h3 style={{ color: "var(--color-primary)", marginBottom: "0.5rem" }}>Mencari Kurir...</h3>
-                  <p className="text-muted">Sistem sedang memancarkan sinyal ke kurir di sekitarmu.</p>
+                  <p className="text-muted" style={{ marginBottom: "1rem" }}>Sistem sedang memancarkan sinyal ke kurir di sekitarmu.</p>
+                  
+                  <div style={{ marginTop: "1.5rem", padding: "1rem", background: "#fff3cd", border: "1px solid #ffeeba", borderRadius: "8px" }}>
+                    <p style={{ fontWeight: "bold", color: "#856404", marginBottom: "0.5rem", fontSize: "0.9rem" }}>Kurir tak kunjung datang atau tidak sabar menunggu?</p>
+                    <button className="btn btn-warning btn-sm" onClick={handleSwitchToPickup} style={{ width: "100%" }}>
+                      Ganti ke Ambil Sendiri (Pick-Up)
+                    </button>
+                  </div>
                 </div>
               )}
 
