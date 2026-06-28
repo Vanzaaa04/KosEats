@@ -132,7 +132,7 @@ export default function CourierOrdersPage() {
       });
       const data = await res.json();
       if (data.success) {
-        const fullUrl = `${API_URL.replace("/api", "")}${data.data.url}`;
+        const fullUrl = data.data.url;
         await updateStatus(selectedOrderId, "DELIVERED", fullUrl);
       } else {
         alert("Gagal upload foto");

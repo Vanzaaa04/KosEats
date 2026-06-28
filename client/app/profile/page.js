@@ -229,7 +229,7 @@ export default function ProfilePage() {
           <div style={{ position: "relative", width: "120px", height: "120px", margin: "0 auto 1.5rem auto" }}>
             {photoUrl ? (
               <img 
-                src={`${process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000"}${photoUrl}`} 
+                src={photoUrl} 
                 alt="Avatar" 
                 style={{ width: "120px", height: "120px", borderRadius: "50%", objectFit: "cover", background: "#f0f0f0", border: "4px solid white", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}
               />

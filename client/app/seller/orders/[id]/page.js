@@ -244,7 +244,7 @@ export default function OrderDetailPage({ params }) {
       
       if (data.success) {
         // fileUrl is e.g. /public/uploads/file-123.jpg
-        const fullUrl = `${API_URL.replace("/api", "")}${data.data.url}`;
+        const fullUrl = data.data.url;
         sendMessage(null, fullUrl);
       } else {
         alert("Gagal upload foto");

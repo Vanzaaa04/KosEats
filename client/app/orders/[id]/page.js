@@ -253,7 +253,7 @@ export default function OrderDetailPage({ params }) {
       const data = await res.json();
       
       if (data.success) {
-        const fullUrl = `${API_URL.replace("/api", "")}${data.data.url}`;
+        const fullUrl = data.data.url;
         const resPut = await fetch(`${API_URL}/orders/${orderId}/transfer-proof`, {
           method: "PUT",
           headers: { 

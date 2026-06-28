@@ -67,7 +67,7 @@ export default function SellerMenuPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setFormData(prev => ({ ...prev, photoUrl: `${process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000"}${data.data.url}` }));
+        setFormData(prev => ({ ...prev, photoUrl: data.data.url }));
       } else {
         alert(data.message || "Gagal mengunggah foto");
       }
