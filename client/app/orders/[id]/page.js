@@ -312,8 +312,13 @@ export default function OrderDetailPage({ params }) {
     if (order.buyer?.latitude && order.buyer?.longitude) {
       markers.push({ lat: order.buyer.latitude, lng: order.buyer.longitude, type: "BUYER", label: "Lokasi Anda" });
     }
-    if (courierLocation && order.status === "ON_THE_WAY") {
-      markers.push({ lat: courierLocation.lat, lng: courierLocation.lng, type: "COURIER", label: "Kurir KosEats" });
+    if (courierLocation && order.status === "DELIVERING") {
+      markers.push({ 
+        lat: courierLocation.lat, 
+        lng: courierLocation.lng, 
+        type: order.deliveryMethod === "SELLER_DELIVERY" ? "STORE" : "COURIER", 
+        label: order.deliveryMethod === "SELLER_DELIVERY" ? "Penjual Sedang Mengantar" : "Kurir KosEats" 
+      });
     }
     return markers;
   };

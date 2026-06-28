@@ -32,6 +32,47 @@ const icons = {
   })
 };
 
+import "leaflet-routing-machine";
+
+// Component to dynamically draw route between origin and destination
+function RoutingMachine({ origin, destination }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map || !origin || !destination) return;
+    
+    let routingControl;
+    try {
+      routingControl = L.Routing.control({
+        waypoints: [
+          L.latLng(origin.lat, origin.lng),
+          L.latLng(destination.lat, destination.lng)
+        ],
+        routeWhileDragging: false,
+        addWaypoints: false,
+        fitSelectedRoutes: false,
+        show: false, // hide textual instructions
+        lineOptions: {
+          styles: [{ color: "#27AE60", weight: 5, opacity: 0.8 }]
+        },
+        createMarker: function() { return null; } // we already draw markers manually
+      }).addTo(map);
+    } catch (e) {
+      console.warn("Leaflet routing error:", e);
+    }
+
+    return () => {
+      try {
+        if (routingControl && map) {
+          map.removeControl(routingControl);
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    };
+  }, [map, origin, destination]);
+  return null;
+}
+
 // Component to dynamically update map bounds to fit all markers
 function FitBounds({ markers }) {
   const map = useMap();
@@ -59,9 +100,21 @@ export default function TrackingMap({ markers = [], lat, lng }) {
   if (mapMarkers.length === 0) return null;
   const initialCenter = [mapMarkers[0].lat, mapMarkers[0].lng];
 
+  // Try to find origin (STORE or moving COURIER) and destination (BUYER) for routing
+  const buyerMarker = mapMarkers.find(m => m.type === "BUYER");
+  const movingMarker = mapMarkers.find(m => m.type === "COURIER" || m.label.includes("Bergerak") || m.label.includes("Sedang Mengantar"));
+  const storeMarker = mapMarkers.find(m => m.type === "STORE");
+  
+  // If moving marker is available, route from moving to buyer. Else from store to buyer.
+  const routeOrigin = movingMarker || storeMarker;
+  const routeDestination = buyerMarker;
+
   return (
     <MapContainer center={initialCenter} zoom={16} style={{ height: "400px", width: "100%", zIndex: 0 }}>
       <FitBounds markers={mapMarkers} />
+      {routeOrigin && routeDestination && (
+        <RoutingMachine origin={routeOrigin} destination={routeDestination} />
+      )}
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
