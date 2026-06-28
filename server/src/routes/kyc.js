@@ -6,9 +6,11 @@ const path = require('path');
 
 const router = express.Router();
 
+const os = require('os');
+
 // Konfigurasi multer untuk upload file
 const upload = multer({
-  dest: path.join(__dirname, '../../uploads/'),
+  dest: os.tmpdir(),
   limits: { fileSize: 10 * 1024 * 1024 }, // Max 10MB
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {

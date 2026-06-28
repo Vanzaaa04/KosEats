@@ -5,11 +5,13 @@ const { authenticate, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
+const os = require('os');
+
 // Setup Multer Storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // Save to public/uploads
-    cb(null, path.join(__dirname, '../../public/uploads'));
+    // Save to tmp for Vercel support
+    cb(null, os.tmpdir());
   },
   filename: (req, file, cb) => {
     // Make unique filename
