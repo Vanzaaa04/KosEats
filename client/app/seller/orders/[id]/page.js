@@ -26,7 +26,9 @@ export default function OrderDetailPage({ params }) {
   const [user, setUser] = useState(null);
   
   // Tracking
-  const [courierLocation, setCourierLocation] = useState(null);
+  const [buyerLiveLocation, setBuyerLiveLocation] = useState(null);
+  const [sellerLiveLocation, setSellerLiveLocation] = useState(null);
+  const [courierLiveLocation, setCourierLiveLocation] = useState(null);
   const channelRef = useRef(null);
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -72,9 +74,17 @@ export default function OrderDetailPage({ params }) {
 
       channelRef.current.on(
         'broadcast',
-        { event: 'update_location' },
+        { event: 'update_buyer_location' },
         (payload) => {
-          setCourierLocation({ lat: payload.payload.lat, lng: payload.payload.lng });
+          setBuyerLiveLocation({ lat: payload.payload.lat, lng: payload.payload.lng });
+        }
+      );
+
+      channelRef.current.on(
+        'broadcast',
+        { event: 'update_courier_location' },
+        (payload) => {
+          setCourierLiveLocation({ lat: payload.payload.lat, lng: payload.payload.lng });
         }
       );
 
@@ -91,16 +101,17 @@ export default function OrderDetailPage({ params }) {
 
   useEffect(() => {
     let watchId;
-    if (order && channelRef.current && ['SELLER_DELIVERY', 'COURIER'].includes(order.deliveryMethod) && ['DELIVERING', 'WAITING_COURIER'].includes(order.status)) {
+    // Penjual memancarkan lokasinya saat metode SELLER_DELIVERY atau saat pembeli PICKUP (menunggu di dapur)
+    if (order && channelRef.current && ['PICKUP', 'SELLER_DELIVERY'].includes(order.deliveryMethod) && ['COOKING', 'READY_FOR_PICKUP', 'DELIVERING'].includes(order.status)) {
       if (navigator.geolocation) {
         watchId = navigator.geolocation.watchPosition(
           (pos) => {
             const lat = pos.coords.latitude;
             const lng = pos.coords.longitude;
-            setCourierLocation({ lat, lng });
+            setSellerLiveLocation({ lat, lng });
             channelRef.current.send({
               type: 'broadcast',
-              event: 'update_location',
+              event: 'update_seller_location',
               payload: { orderId: order.id, lat, lng }
             });
           },
@@ -125,9 +136,6 @@ export default function OrderDetailPage({ params }) {
         const found = data.data.find(o => o.id === orderId);
         if (found) {
           setOrder(found);
-          if (!courierLocation) {
-            setCourierLocation({ lat: found.buyer?.latitude || -7.280, lng: found.buyer?.longitude || 112.795 });
-          }
         }
       }
     } catch (err) {
@@ -261,21 +269,51 @@ export default function OrderDetailPage({ params }) {
   const getMapMarkers = () => {
     if (!order) return [];
     const markers = [];
-    if (order.store?.latitude && order.store?.longitude) {
-      markers.push({ lat: order.store.latitude, lng: order.store.longitude, type: "STORE", label: "Lokasi Anda" });
-    }
-    if (order.buyer?.latitude && order.buyer?.longitude) {
-      markers.push({ lat: order.buyer.latitude, lng: order.buyer.longitude, type: "BUYER", label: "Lokasi Pengantaran" });
-    }
-    if (courierLocation && order.status === "DELIVERING") {
+    
+    const storeLat = order.store?.latitude;
+    const storeLng = order.store?.longitude;
+    const buyerLat = order.buyer?.latitude;
+    const buyerLng = order.buyer?.longitude;
+
+    if (order.deliveryMethod === "PICKUP") {
       markers.push({ 
-        lat: courierLocation.lat, 
-        lng: courierLocation.lng, 
-        type: order.deliveryMethod === "SELLER_DELIVERY" ? "STORE" : "COURIER", 
-        label: order.deliveryMethod === "SELLER_DELIVERY" ? "Lokasi Anda (Bergerak)" : "Kurir KosEats" 
+        lat: buyerLiveLocation?.lat || buyerLat, 
+        lng: buyerLiveLocation?.lng || buyerLng, 
+        type: "COURIER", 
+        label: "Pembeli Sedang Mengambil"
       });
+      markers.push({ 
+        lat: sellerLiveLocation?.lat || storeLat, 
+        lng: sellerLiveLocation?.lng || storeLng, 
+        type: "STORE", 
+        label: "Lokasi Anda" 
+      });
+    } else if (order.deliveryMethod === "SELLER_DELIVERY") {
+      markers.push({ 
+        lat: sellerLiveLocation?.lat || storeLat, 
+        lng: sellerLiveLocation?.lng || storeLng, 
+        type: "COURIER", 
+        label: "Anda Sedang Mengantar" 
+      });
+      markers.push({ 
+        lat: buyerLiveLocation?.lat || buyerLat, 
+        lng: buyerLiveLocation?.lng || buyerLng, 
+        type: "BUYER", 
+        label: "Lokasi Pengantaran" 
+      });
+    } else {
+      if (storeLat && storeLng) {
+        markers.push({ lat: storeLat, lng: storeLng, type: "STORE", label: "Lokasi Anda" });
+      }
+      if (buyerLat && buyerLng) {
+        markers.push({ lat: buyerLat, lng: buyerLng, type: "BUYER", label: "Lokasi Pengantaran" });
+      }
+      if (courierLiveLocation && order.status === "DELIVERING") {
+        markers.push({ lat: courierLiveLocation.lat, lng: courierLiveLocation.lng, type: "COURIER", label: "Kurir KosEats" });
+      }
     }
-    return markers;
+    
+    return markers.filter(m => m.lat && m.lng);
   };
 
   if (loading) {
@@ -354,7 +392,7 @@ export default function OrderDetailPage({ params }) {
                     />
                   </div>
                   ) : (
-                    <TrackingMap markers={getMapMarkers()} lat={courierLocation?.lat} lng={courierLocation?.lng} />
+                    <TrackingMap markers={getMapMarkers()} />
                   )}
               </div>
             </div>

@@ -100,14 +100,20 @@ export default function TrackingMap({ markers = [], lat, lng }) {
   if (mapMarkers.length === 0) return null;
   const initialCenter = [mapMarkers[0].lat, mapMarkers[0].lng];
 
-  // Try to find origin (STORE or moving COURIER) and destination (BUYER) for routing
+  const movingMarker = mapMarkers.find(m => m.type === "COURIER");
   const buyerMarker = mapMarkers.find(m => m.type === "BUYER");
-  const movingMarker = mapMarkers.find(m => m.type === "COURIER" || m.label.includes("Bergerak") || m.label.includes("Sedang Mengantar"));
   const storeMarker = mapMarkers.find(m => m.type === "STORE");
   
-  // If moving marker is available, route from moving to buyer. Else from store to buyer.
-  const routeOrigin = movingMarker || storeMarker;
-  const routeDestination = buyerMarker;
+  let routeOrigin = null;
+  let routeDestination = null;
+
+  if (movingMarker) {
+    routeOrigin = movingMarker;
+    routeDestination = buyerMarker || storeMarker; 
+  } else if (storeMarker && buyerMarker) {
+    routeOrigin = storeMarker;
+    routeDestination = buyerMarker;
+  }
 
   return (
     <MapContainer center={initialCenter} zoom={16} style={{ height: "400px", width: "100%", zIndex: 0 }}>
