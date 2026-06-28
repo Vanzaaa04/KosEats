@@ -104,7 +104,7 @@ export default function AdminStoresPage() {
                     </td>
                     <td style={{ padding: "1rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                       {store.ktpUrl && (
-                        <a href={`${process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000"}${store.ktpUrl}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">
+                        <a href={store.ktpUrl} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">
                           Lihat KTP
                         </a>
                       )}

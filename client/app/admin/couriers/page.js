@@ -107,7 +107,7 @@ export default function AdminCouriersPage() {
                     </td>
                     <td style={{ padding: "1rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                       {courier.ktpUrl && (
-                        <a href={`${process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000"}${courier.ktpUrl}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">
+                        <a href={courier.ktpUrl} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">
                           Lihat KTP
                         </a>
                       )}

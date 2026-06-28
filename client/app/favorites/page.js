@@ -80,7 +80,7 @@ export default function FavoritesPage() {
               <div key={fav.id} className="card" style={{ position: "relative" }}>
                 <div style={{ height: "150px", backgroundColor: "#f3f4f6", borderRadius: "var(--radius-md)", marginBottom: "1rem", overflow: "hidden" }}>
                   {fav.store.photoUrl ? (
-                    <img src={`${process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000"}${fav.store.photoUrl}`} alt={fav.store.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    <img src={fav.store.photoUrl} alt={fav.store.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   ) : (
                     <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af" }}>Tidak ada foto</div>
                   )}
