@@ -115,7 +115,7 @@ export default function RegisterPage() {
 
           <div>
             <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "bold" }}>Pin Lokasi Kos (Peta):</label>
-            <LocationPicker location={location} onChange={setLocation} />
+            <LocationPicker onLocationChange={setLocation} defaultLat={location.lat} defaultLng={location.lng} />
           </div>
 
           <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "1rem" }} disabled={loading || !isFormValid}>
