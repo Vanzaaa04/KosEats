@@ -258,6 +258,21 @@ export default function OrderDetailPage({ params }) {
     }
   };
 
+  const getMapMarkers = () => {
+    if (!order) return [];
+    const markers = [];
+    if (order.store?.latitude && order.store?.longitude) {
+      markers.push({ lat: order.store.latitude, lng: order.store.longitude, type: "STORE", label: "Lokasi Anda" });
+    }
+    if (order.buyer?.latitude && order.buyer?.longitude) {
+      markers.push({ lat: order.buyer.latitude, lng: order.buyer.longitude, type: "BUYER", label: "Lokasi Pengantaran" });
+    }
+    if (courierLocation && order.status === "ON_THE_WAY") {
+      markers.push({ lat: courierLocation.lat, lng: courierLocation.lng, type: "COURIER", label: "Kurir KosEats" });
+    }
+    return markers;
+  };
+
   if (loading) {
     return (
       <>
@@ -333,11 +348,9 @@ export default function OrderDetailPage({ params }) {
                       onClick={() => window.open(order.proofOfDeliveryUrl, '_blank')}
                     />
                   </div>
-                ) : courierLocation ? (
-                  <TrackingMap lat={courierLocation.lat} lng={courierLocation.lng} />
-                ) : (
-                  <div className="flex-center" style={{ height: "100%", background: "#f8f9fa", color: "var(--color-muted)" }}>Memuat Peta...</div>
-                )}
+                  ) : (
+                    <TrackingMap markers={getMapMarkers()} lat={courierLocation?.lat} lng={courierLocation?.lng} />
+                  )}
               </div>
             </div>
 
