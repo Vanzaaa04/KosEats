@@ -141,6 +141,8 @@ model WalletTransaction {
   description String?
   status      String       @default("PENDING") // PENDING, PAID, FAILED
   externalId  String?      @unique @map("external_id") // ID invoice xendit misal KE-TOPUP-123
+  proofUrl    String?      @map("proof_url") // Foto struk transfer manual
+  adminNote   String?      @map("admin_note") // Pesan dari admin jika nominal transfer kurang
   createdAt   DateTime     @default(now()) @map("created_at")
 
   user        User         @relation(fields: [userId], references: [id])
