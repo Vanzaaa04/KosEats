@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "../../components/Navbar";
 import dynamic from "next/dynamic";
-import { supabase } from '../../../lib/supabaseClient';
+import { supabase } from '../../lib/supabaseClient';
 import { Send, Image as ImageIcon, MapPin, ArrowLeft, PackageSearch, CheckCircle, AlertTriangle, UploadCloud, Wallet } from "lucide-react";
 
 const TrackingMap = dynamic(() => import("../../components/Map"), { ssr: false });

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { supabase } from '../../../../lib/supabaseClient';
+import { supabase } from '../../../lib/supabaseClient';
 import { Send, Image as ImageIcon, MapPin, ArrowLeft, AlertTriangle } from "lucide-react";
 
 const TrackingMap = dynamic(() => import("../../../components/Map"), { ssr: false });
