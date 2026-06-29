@@ -248,7 +248,7 @@ export default function UpgradeCourierPage() {
           {step === 2 && (
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <label style={{ fontWeight: "bold" }}>Unggah Foto KTP Asli:</label>
-              <div style={{ border: "2px dashed var(--color-border)", padding: "2rem", textAlign: "center", borderRadius: "var(--radius-lg)" }}>
+              <div style={{ position: "relative", border: "2px dashed var(--color-border)", padding: "2rem", textAlign: "center", borderRadius: "var(--radius-lg)" }}>
                 {ktpImage ? (
                   <img src={ktpImage} alt="KTP" style={{ maxWidth: "100%", maxHeight: "200px", borderRadius: "var(--radius-md)" }} />
                 ) : (
